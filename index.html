@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>shinsoku</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+  }
+  canvas {
+    display: block;
+    max-width: 100vw;
+    max-height: 100vh;
+    image-rendering: pixelated;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+'use strict';
+
+// ============================================================
+// 定数
+// ============================================================
+const CANVAS_W = 800;
+const CANVAS_H = 400;
+const GROUND_Y = 340;
+const GRAVITY = 0.6;
+const JUMP_FORCE = -12;
+const BASE_SPEED = 5;
+const MAX_SPEED = 16;
+const SPEED_INCREMENT = 0.001;       // 毎フレームの自然加速
+const ACCEL_BOOST = 3;               // 加速アイテムの速度ブースト
+const ACCEL_DURATION = 120;          // 加速効果の持続フレーム数
+const SCORE_MULTIPLIER_BOOST = 2;    // 加速中のスコア倍率
+
+const PLAYER_W = 30;
+const PLAYER_H = 40;
+const PLAYER_X = 80;
+
+const OBSTACLE_MIN_W = 20;
+const OBSTACLE_MAX_W = 40;
+const OBSTACLE_MIN_H = 30;
+const OBSTACLE_MAX_H = 55;
+
+const ACCEL_SIZE = 24;
+
+const SPAWN_INTERVAL_MIN = 40;
+const SPAWN_INTERVAL_MAX = 120;
+
+// ============================================================
+// Canvas セットアップ
+// ============================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = CANVAS_W;
+canvas.height = CANVAS_H;
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+function rand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function randInt(min, max) {
+  return Math.floor(rand(min, max + 1));
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x &&
+         a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// ============================================================
+// ゲーム状態
+// ============================================================
+let state = 'title';  // title | playing | gameover
+let score = 0;
+let highScore = 0;
+let gameSpeed = BASE_SPEED;
+let accelTimer = 0;
+let scoreMultiplier = 1;
+let frameCount = 0;
+let spawnTimer = 0;
+
+// 背景の星
+let stars = [];
+// 地面パーティクル
+let groundDots = [];
+
+// ============================================================
+// プレイヤー
+// ============================================================
+const player = {
+  x: PLAYER_X,
+  y: GROUND_Y - PLAYER_H,
+  w: PLAYER_W,
+  h: PLAYER_H,
+  vy: 0,
+  onGround: true,
+  color: '#4fc3f7',
+};
+
+function playerJump() {
+  if (player.onGround) {
+    player.vy = JUMP_FORCE;
+    player.onGround = false;
+  }
+}
+
+function playerUpdate() {
+  player.vy += GRAVITY;
+  player.y += player.vy;
+  if (player.y >= GROUND_Y - player.h) {
+    player.y = GROUND_Y - player.h;
+    player.vy = 0;
+    player.onGround = true;
+  }
+}
+
+function playerDraw() {
+  // 本体
+  ctx.fillStyle = player.color;
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+
+  // 目
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(player.x + 18, player.y + 8, 7, 7);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(player.x + 21, player.y + 10, 3, 3);
+
+  // 加速中エフェクト
+  if (accelTimer > 0) {
+    ctx.strokeStyle = `rgba(255, 235, 59, ${0.4 + Math.sin(frameCount * 0.2) * 0.3})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(player.x - 3, player.y - 3, player.w + 6, player.h + 6);
+
+    // スピードライン
+    for (let i = 0; i < 3; i++) {
+      const ly = player.y + 5 + i * 14;
+      const lx = player.x - rand(10, 30);
+      ctx.strokeStyle = `rgba(255, 235, 59, ${rand(0.3, 0.7)})`;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx - rand(10, 25), ly);
+      ctx.stroke();
+    }
+  }
+}
+
+// ============================================================
+// オブジェクト管理
+// ============================================================
+let obstacles = [];
+let accelerators = [];
+
+function spawnObstacle() {
+  const w = randInt(OBSTACLE_MIN_W, OBSTACLE_MAX_W);
+  const h = randInt(OBSTACLE_MIN_H, OBSTACLE_MAX_H);
+  obstacles.push({
+    x: CANVAS_W + 10,
+    y: GROUND_Y - h,
+    w: w,
+    h: h,
+    color: '#ef5350',
+  });
+}
+
+function spawnAccelerator() {
+  const yOffset = randInt(0, 60);
+  accelerators.push({
+    x: CANVAS_W + 10,
+    y: GROUND_Y - ACCEL_SIZE - yOffset,
+    w: ACCEL_SIZE,
+    h: ACCEL_SIZE,
+    color: '#ffeb3b',
+  });
+}
+
+function spawnObject() {
+  // 30%の確率で加速アイテム、70%で障害物
+  if (Math.random() < 0.3) {
+    spawnAccelerator();
+  } else {
+    spawnObstacle();
+  }
+}
+
+function updateObjects() {
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    obstacles[i].x -= gameSpeed;
+    if (obstacles[i].x + obstacles[i].w < 0) {
+      obstacles.splice(i, 1);
+    }
+  }
+  for (let i = accelerators.length - 1; i >= 0; i--) {
+    accelerators[i].x -= gameSpeed;
+    if (accelerators[i].x + accelerators[i].w < 0) {
+      accelerators.splice(i, 1);
+    }
+  }
+}
+
+function drawObstacles() {
+  for (const o of obstacles) {
+    ctx.fillStyle = o.color;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    // トゲ模様
+    ctx.fillStyle = '#c62828';
+    const stripes = Math.floor(o.w / 8);
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillRect(o.x + i * 8 + 2, o.y, 2, o.h);
+    }
+  }
+}
+
+function drawAccelerators() {
+  for (const a of accelerators) {
+    // 矢印型アイコン
+    ctx.fillStyle = a.color;
+    ctx.save();
+    ctx.translate(a.x + a.w / 2, a.y + a.h / 2);
+    // 回転エフェクト
+    const glow = Math.sin(frameCount * 0.1) * 0.3 + 0.7;
+    ctx.globalAlpha = glow;
+    // 右向き矢印を描画
+    ctx.beginPath();
+    ctx.moveTo(a.w * 0.4, 0);
+    ctx.lineTo(-a.w * 0.2, -a.h * 0.35);
+    ctx.lineTo(-a.w * 0.2, -a.h * 0.12);
+    ctx.lineTo(-a.w * 0.4, -a.h * 0.12);
+    ctx.lineTo(-a.w * 0.4, a.h * 0.12);
+    ctx.lineTo(-a.w * 0.2, a.h * 0.12);
+    ctx.lineTo(-a.w * 0.2, a.h * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// 当たり判定
+// ============================================================
+function checkCollisions() {
+  const pRect = { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 6 };
+
+  for (const o of obstacles) {
+    if (rectsOverlap(pRect, o)) {
+      return 'hit';
+    }
+  }
+
+  for (let i = accelerators.length - 1; i >= 0; i--) {
+    if (rectsOverlap(pRect, accelerators[i])) {
+      accelerators.splice(i, 1);
+      return 'accel';
+    }
+  }
+  return 'none';
+}
+
+// ============================================================
+// 背景演出
+// ============================================================
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 50; i++) {
+    stars.push({
+      x: rand(0, CANVAS_W),
+      y: rand(0, GROUND_Y - 20),
+      size: rand(1, 2.5),
+      speed: rand(0.3, 1.2),
+    });
+  }
+}
+
+function initGroundDots() {
+  groundDots = [];
+  for (let i = 0; i < 30; i++) {
+    groundDots.push({
+      x: rand(0, CANVAS_W),
+      speed: rand(0.5, 1),
+    });
+  }
+}
+
+function updateBackground() {
+  for (const s of stars) {
+    s.x -= s.speed * (gameSpeed / BASE_SPEED);
+    if (s.x < 0) { s.x = CANVAS_W; s.y = rand(0, GROUND_Y - 20); }
+  }
+  for (const d of groundDots) {
+    d.x -= d.speed * gameSpeed;
+    if (d.x < 0) d.x = CANVAS_W;
+  }
+}
+
+function drawBackground() {
+  // 空
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // 加速中はちょっと明るく
+  if (accelTimer > 0) {
+    ctx.fillStyle = `rgba(255, 235, 59, 0.03)`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
+
+  // 星
+  for (const s of stars) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + Math.sin(frameCount * 0.02 + s.x) * 0.2})`;
+    ctx.fillRect(s.x, s.y, s.size, s.size);
+  }
+
+  // 地面
+  ctx.fillStyle = '#2d2d4a';
+  ctx.fillRect(0, GROUND_Y, CANVAS_W, CANVAS_H - GROUND_Y);
+
+  // 地面のライン
+  ctx.strokeStyle = '#3d3d5c';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y);
+  ctx.lineTo(CANVAS_W, GROUND_Y);
+  ctx.stroke();
+
+  // 地面ドット
+  ctx.fillStyle = '#3d3d5c';
+  for (const d of groundDots) {
+    ctx.fillRect(d.x, GROUND_Y + 8, 2, 2);
+  }
+}
+
+// ============================================================
+// UI描画
+// ============================================================
+function drawUI() {
+  ctx.fillStyle = '#fff';
+  ctx.font = '16px "Segoe UI", sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(`SCORE: ${Math.floor(score)}`, CANVAS_W - 20, 30);
+  ctx.fillText(`HI: ${Math.floor(highScore)}`, CANVAS_W - 20, 52);
+
+  ctx.textAlign = 'left';
+  ctx.fillText(`SPEED: ${gameSpeed.toFixed(1)}`, 20, 30);
+
+  if (accelTimer > 0) {
+    ctx.fillStyle = '#ffeb3b';
+    ctx.fillText(`⚡ BOOST x${scoreMultiplier}`, 20, 52);
+
+    // ブーストゲージ
+    const gaugeW = 80;
+    const gaugeH = 4;
+    const ratio = accelTimer / ACCEL_DURATION;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(20, 58, gaugeW, gaugeH);
+    ctx.fillStyle = '#ffeb3b';
+    ctx.fillRect(20, 58, gaugeW * ratio, gaugeH);
+  }
+}
+
+function drawTitle() {
+  drawBackground();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SHINSOKU', CANVAS_W / 2, 140);
+
+  ctx.font = '18px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('神速ダッシュランナー', CANVAS_W / 2, 175);
+
+  ctx.font = '16px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#4fc3f7';
+  ctx.fillText('スペースキー or タップ でスタート', CANVAS_W / 2, 240);
+
+  // 説明
+  ctx.font = '14px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#ef5350';
+  ctx.fillText('■ 障害物 → ジャンプで避ける', CANVAS_W / 2, 290);
+  ctx.fillStyle = '#ffeb3b';
+  ctx.fillText('▶ 加速アイテム → 取るとスピードUP！', CANVAS_W / 2, 315);
+
+  if (highScore > 0) {
+    ctx.fillStyle = '#aaa';
+    ctx.fillText(`ハイスコア: ${Math.floor(highScore)}`, CANVAS_W / 2, 360);
+  }
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.fillStyle = '#ef5350';
+  ctx.font = 'bold 40px "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('GAME OVER', CANVAS_W / 2, 150);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '22px "Segoe UI", sans-serif';
+  ctx.fillText(`SCORE: ${Math.floor(score)}`, CANVAS_W / 2, 200);
+
+  if (score >= highScore && score > 0) {
+    ctx.fillStyle = '#ffeb3b';
+    ctx.font = '18px "Segoe UI", sans-serif';
+    ctx.fillText('🏆 NEW RECORD!', CANVAS_W / 2, 235);
+  }
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = '16px "Segoe UI", sans-serif';
+  ctx.fillText('スペースキー or タップ でリトライ', CANVAS_W / 2, 290);
+}
+
+// ============================================================
+// ゲーム制御
+// ============================================================
+function resetGame() {
+  player.y = GROUND_Y - PLAYER_H;
+  player.vy = 0;
+  player.onGround = true;
+  obstacles = [];
+  accelerators = [];
+  gameSpeed = BASE_SPEED;
+  accelTimer = 0;
+  scoreMultiplier = 1;
+  score = 0;
+  frameCount = 0;
+  spawnTimer = randInt(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX);
+  initStars();
+  initGroundDots();
+}
+
+function update() {
+  if (state !== 'playing') return;
+
+  frameCount++;
+  playerUpdate();
+  updateObjects();
+  updateBackground();
+
+  // 自然加速
+  if (gameSpeed < MAX_SPEED) {
+    gameSpeed += SPEED_INCREMENT;
+  }
+
+  // 加速タイマー
+  if (accelTimer > 0) {
+    accelTimer--;
+    if (accelTimer <= 0) {
+      gameSpeed = Math.max(BASE_SPEED, gameSpeed - ACCEL_BOOST);
+      scoreMultiplier = 1;
+    }
+  }
+
+  // スポーン
+  spawnTimer--;
+  if (spawnTimer <= 0) {
+    spawnObject();
+    // スピードが上がるほど間隔が短くなる
+    const minInterval = Math.max(25, SPAWN_INTERVAL_MIN - (gameSpeed - BASE_SPEED) * 3);
+    const maxInterval = Math.max(50, SPAWN_INTERVAL_MAX - (gameSpeed - BASE_SPEED) * 5);
+    spawnTimer = randInt(minInterval, maxInterval);
+  }
+
+  // 当たり判定
+  const result = checkCollisions();
+  if (result === 'hit') {
+    state = 'gameover';
+    if (score > highScore) highScore = score;
+    return;
+  }
+  if (result === 'accel') {
+    gameSpeed = Math.min(MAX_SPEED, gameSpeed + ACCEL_BOOST);
+    accelTimer = ACCEL_DURATION;
+    scoreMultiplier = SCORE_MULTIPLIER_BOOST;
+  }
+
+  // スコア加算
+  score += 0.1 * (gameSpeed / BASE_SPEED) * scoreMultiplier;
+}
+
+function draw() {
+  if (state === 'title') {
+    drawTitle();
+    return;
+  }
+
+  drawBackground();
+  drawObstacles();
+  drawAccelerators();
+  playerDraw();
+  drawUI();
+
+  if (state === 'gameover') {
+    drawGameOver();
+  }
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// 入力
+// ============================================================
+function handleAction() {
+  if (state === 'title') {
+    resetGame();
+    state = 'playing';
+  } else if (state === 'playing') {
+    playerJump();
+  } else if (state === 'gameover') {
+    state = 'title';
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    handleAction();
+  }
+});
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  handleAction();
+}, { passive: false });
+
+canvas.addEventListener('mousedown', (e) => {
+  handleAction();
+});
+
+// ============================================================
+// 起動
+// ============================================================
+initStars();
+initGroundDots();
+gameLoop();
+</script>
+</body>
+</html>
