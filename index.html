@@ -109,6 +109,11 @@ let blizzardParticles = [];
 // 背景動物（ZENモード用）
 let bgAnimals = [];
 
+// ペンギン種別
+const PENGUIN_SPECIES = ['chinstrap', 'gentoo', 'adelie'];
+const PENGUIN_NAMES = { chinstrap: 'ヒゲペンギン', gentoo: 'ジェンツーペンギン', adelie: 'アデリーペンギン' };
+let currentSpecies = 'chinstrap';
+
 // ============================================================
 // オーディオシステム
 // ============================================================
@@ -293,46 +298,129 @@ function playerUpdate() {
   player.runFrame += gameSpeed * 0.15;
 }
 
-function drawPenguin(x, y, w, h) {
+function drawPenguin(x, y, w, h, species) {
+  species = species || currentSpecies;
   const cx = x + w / 2;
   const legSwing = player.onGround ? Math.sin(player.runFrame) * 4 : 0;
 
-  ctx.fillStyle = '#e67e22';
+  // 足の色: ジェンツーは黄色、他はピンク
+  const footColor = species === 'gentoo' ? '#e6b422' : '#e8a0a0';
+  ctx.fillStyle = footColor;
   ctx.fillRect(cx - 8 + legSwing, y + h - 6, 7, 6);
   ctx.fillRect(cx + 1 - legSwing, y + h - 6, 7, 6);
 
+  // 体（黒）
   ctx.fillStyle = '#1a1a2e';
   ctx.beginPath();
   ctx.ellipse(cx, y + h * 0.5, w * 0.45, h * 0.48, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // お腹（白）
   ctx.fillStyle = '#f0f0f0';
   ctx.beginPath();
   ctx.ellipse(cx + 1, y + h * 0.55, w * 0.28, h * 0.35, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // 頭（黒）
   ctx.fillStyle = '#1a1a2e';
   ctx.beginPath();
   ctx.arc(cx, y + 12, 12, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(cx + 5, y + 10, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#111';
-  ctx.beginPath();
-  ctx.arc(cx + 6, y + 10, 2, 0, Math.PI * 2);
-  ctx.fill();
+  // === 種別ごとの頭部 ===
+  if (species === 'chinstrap') {
+    // ヒゲペンギン: 白い顔面、あごの黒い線
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx + 3, y + 13, 8, -0.8, 1.2);
+    ctx.fill();
+    // 目
+    ctx.fillStyle = '#594a2a';
+    ctx.beginPath();
+    ctx.arc(cx + 6, y + 10, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // くちばし（黒）
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.moveTo(cx + 10, y + 13);
+    ctx.lineTo(cx + 17, y + 15);
+    ctx.lineTo(cx + 10, y + 17);
+    ctx.closePath();
+    ctx.fill();
+    // ヒゲ模様（あごの下の黒い細線）
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, y + 17);
+    ctx.quadraticCurveTo(cx + 2, y + 22, cx + 10, y + 17);
+    ctx.stroke();
 
-  ctx.fillStyle = '#e67e22';
-  ctx.beginPath();
-  ctx.moveTo(cx + 10, y + 13);
-  ctx.lineTo(cx + 18, y + 15);
-  ctx.lineTo(cx + 10, y + 17);
-  ctx.closePath();
-  ctx.fill();
+  } else if (species === 'gentoo') {
+    // ジェンツーペンギン: 目をつなぐ白い模様、オレンジのくちばし
+    // 頭頂の白い三角パッチ（目をつなぐように）
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, y + 5);
+    ctx.quadraticCurveTo(cx + 1, y + 1, cx + 6, y + 5);
+    ctx.quadraticCurveTo(cx + 8, y + 8, cx + 6, y + 10);
+    ctx.lineTo(cx - 2, y + 10);
+    ctx.quadraticCurveTo(cx - 5, y + 8, cx - 4, y + 5);
+    ctx.fill();
+    // 目
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx + 5, y + 10, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(cx + 5.5, y + 10, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    // くちばし（オレンジ〜赤、先端が黒）
+    ctx.fillStyle = '#e67e22';
+    ctx.beginPath();
+    ctx.moveTo(cx + 10, y + 12);
+    ctx.lineTo(cx + 19, y + 15);
+    ctx.lineTo(cx + 10, y + 17);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.moveTo(cx + 16, y + 14);
+    ctx.lineTo(cx + 19, y + 15);
+    ctx.lineTo(cx + 16, y + 16);
+    ctx.closePath();
+    ctx.fill();
 
+  } else {
+    // アデリーペンギン: 真っ黒な頭、白いアイリング
+    // 目（白いリング）
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx + 5, y + 10, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(cx + 5.5, y + 10, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // くちばし（くすんだオレンジ＋黒）
+    ctx.fillStyle = '#8b5a2b';
+    ctx.beginPath();
+    ctx.moveTo(cx + 10, y + 13);
+    ctx.lineTo(cx + 17, y + 15);
+    ctx.lineTo(cx + 10, y + 17);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.moveTo(cx + 14, y + 14);
+    ctx.lineTo(cx + 17, y + 15);
+    ctx.lineTo(cx + 14, y + 16);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 翼（共通）
   const wingAngle = player.onGround ? Math.sin(player.runFrame * 1.5) * 0.3 : -0.5;
   ctx.fillStyle = '#2c2c4a';
   ctx.save();
@@ -1054,7 +1142,7 @@ function drawUI() {
   ctx.font = '12px "Segoe UI", sans-serif';
   ctx.fillStyle = `rgba(180, 210, 240, 0.6)`;
   ctx.textAlign = 'left';
-  ctx.fillText(sky.phaseName, 20, 48);
+  ctx.fillText(`${sky.phaseName}  ${PENGUIN_NAMES[currentSpecies]}`, 20, 48);
 
   if (accelTimer > 0) {
     ctx.fillStyle = '#f39c12';
@@ -1094,7 +1182,10 @@ function drawTitle() {
     ctx.fill();
   }
 
-  drawPenguin(CANVAS_W / 2 - 16, 175, 32, 38);
+  // 3種類のペンギンを並べて表示
+  drawPenguin(CANVAS_W / 2 - 60, 180, 28, 34, 'chinstrap');
+  drawPenguin(CANVAS_W / 2 - 14, 178, 30, 36, 'gentoo');
+  drawPenguin(CANVAS_W / 2 + 32, 180, 28, 34, 'adelie');
 
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 44px "Segoe UI", sans-serif';
@@ -1198,6 +1289,8 @@ function drawGameOver() {
 // ゲーム制御
 // ============================================================
 function resetGame() {
+  // ランダムにペンギン種別を選択
+  currentSpecies = PENGUIN_SPECIES[Math.floor(Math.random() * PENGUIN_SPECIES.length)];
   player.y = GROUND_Y - PLAYER_H;
   player.vy = 0;
   player.onGround = true;
