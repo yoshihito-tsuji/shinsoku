@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>shinsoku</title>
+<title>shinsoku - 南極ペンギンランナー</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #1a1a2e;
+    background: #0a1628;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -19,7 +19,6 @@
     display: block;
     max-width: 100vw;
     max-height: 100vh;
-    image-rendering: pixelated;
   }
 </style>
 </head>
@@ -38,21 +37,21 @@ const GRAVITY = 0.6;
 const JUMP_FORCE = -12;
 const BASE_SPEED = 5;
 const MAX_SPEED = 16;
-const SPEED_INCREMENT = 0.001;       // 毎フレームの自然加速
-const ACCEL_BOOST = 3;               // 加速アイテムの速度ブースト
-const ACCEL_DURATION = 120;          // 加速効果の持続フレーム数
-const SCORE_MULTIPLIER_BOOST = 2;    // 加速中のスコア倍率
+const SPEED_INCREMENT = 0.001;
+const ACCEL_BOOST = 3;
+const ACCEL_DURATION = 120;
+const SCORE_MULTIPLIER_BOOST = 2;
 
-const PLAYER_W = 30;
-const PLAYER_H = 40;
+const PLAYER_W = 32;
+const PLAYER_H = 38;
 const PLAYER_X = 80;
 
-const OBSTACLE_MIN_W = 20;
-const OBSTACLE_MAX_W = 40;
+const OBSTACLE_MIN_W = 22;
+const OBSTACLE_MAX_W = 45;
 const OBSTACLE_MIN_H = 30;
-const OBSTACLE_MAX_H = 55;
+const OBSTACLE_MAX_H = 58;
 
-const ACCEL_SIZE = 24;
+const ACCEL_SIZE = 26;
 
 const SPAWN_INTERVAL_MIN = 40;
 const SPAWN_INTERVAL_MAX = 120;
@@ -71,11 +70,9 @@ canvas.height = CANVAS_H;
 function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
-
 function randInt(min, max) {
   return Math.floor(rand(min, max + 1));
 }
-
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x &&
          a.y < b.y + b.h && a.y + a.h > b.y;
@@ -84,7 +81,7 @@ function rectsOverlap(a, b) {
 // ============================================================
 // ゲーム状態
 // ============================================================
-let state = 'title';  // title | playing | gameover
+let state = 'title';
 let score = 0;
 let highScore = 0;
 let gameSpeed = BASE_SPEED;
@@ -92,17 +89,22 @@ let accelTimer = 0;
 let scoreMultiplier = 1;
 let frameCount = 0;
 let spawnTimer = 0;
-let safeZoneTimer = 0;           // 加速直後の安全期間
+let safeZoneTimer = 0;
+const MIN_REACTION_FRAMES = 30;
 
-const MIN_REACTION_FRAMES = 30;  // 最低反応時間（0.5秒）
+// 背景要素
+let snowflakes = [];
+let groundMarks = [];
+let mountains = [];
+let auroraWaves = [];
 
-// 背景の星
-let stars = [];
-// 地面パーティクル
-let groundDots = [];
+// 舞台演出
+let stageMode = 'clear';  // clear | blizzard | aurora
+let stageTimer = 0;
+let blizzardParticles = [];
 
 // ============================================================
-// プレイヤー
+// プレイヤー（ペンギン）
 // ============================================================
 const player = {
   x: PLAYER_X,
@@ -111,9 +113,9 @@ const player = {
   h: PLAYER_H,
   vy: 0,
   onGround: true,
-  jumpCount: 0,      // 0=地上, 1=一段目, 2=二段目
+  jumpCount: 0,
   maxJumps: 2,
-  color: '#4fc3f7',
+  runFrame: 0,
 };
 
 function playerJump() {
@@ -133,42 +135,109 @@ function playerUpdate() {
     player.onGround = true;
     player.jumpCount = 0;
   }
+  player.runFrame += gameSpeed * 0.15;
+}
+
+function drawPenguin(x, y, w, h) {
+  const cx = x + w / 2;
+  const legSwing = player.onGround ? Math.sin(player.runFrame) * 4 : 0;
+
+  // 足（オレンジ）
+  ctx.fillStyle = '#e67e22';
+  ctx.fillRect(cx - 8 + legSwing, y + h - 6, 7, 6);
+  ctx.fillRect(cx + 1 - legSwing, y + h - 6, 7, 6);
+
+  // 体（黒）
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath();
+  ctx.ellipse(cx, y + h * 0.5, w * 0.45, h * 0.48, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // お腹（白）
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath();
+  ctx.ellipse(cx + 1, y + h * 0.55, w * 0.28, h * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 頭（黒）
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath();
+  ctx.arc(cx, y + 12, 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 目（白丸＋黒瞳）
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx + 5, y + 10, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(cx + 6, y + 10, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // くちばし（オレンジ三角）
+  ctx.fillStyle = '#e67e22';
+  ctx.beginPath();
+  ctx.moveTo(cx + 10, y + 13);
+  ctx.lineTo(cx + 18, y + 15);
+  ctx.lineTo(cx + 10, y + 17);
+  ctx.closePath();
+  ctx.fill();
+
+  // 翼（走りモーション）
+  const wingAngle = player.onGround ? Math.sin(player.runFrame * 1.5) * 0.3 : -0.5;
+  ctx.fillStyle = '#2c2c4a';
+  // 左翼
+  ctx.save();
+  ctx.translate(cx - w * 0.35, y + h * 0.35);
+  ctx.rotate(-0.3 + wingAngle);
+  ctx.fillRect(-3, 0, 6, h * 0.35);
+  ctx.restore();
+  // 右翼
+  ctx.save();
+  ctx.translate(cx + w * 0.35, y + h * 0.35);
+  ctx.rotate(0.3 - wingAngle);
+  ctx.fillRect(-3, 0, 6, h * 0.35);
+  ctx.restore();
 }
 
 function playerDraw() {
-  // 本体
-  ctx.fillStyle = player.color;
-  ctx.fillRect(player.x, player.y, player.w, player.h);
+  drawPenguin(player.x, player.y, player.w, player.h);
 
-  // 目
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(player.x + 18, player.y + 8, 7, 7);
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(player.x + 21, player.y + 10, 3, 3);
-
-  // 二段ジャンプインジケーター
+  // 二段ジャンプインジケーター（雪の結晶風）
   if (!player.onGround && player.jumpCount < player.maxJumps) {
-    // 二段ジャンプ可能 → 足元に小さい光
-    ctx.fillStyle = `rgba(79, 195, 247, ${0.5 + Math.sin(frameCount * 0.3) * 0.3})`;
-    ctx.beginPath();
-    ctx.arc(player.x + player.w / 2, player.y + player.h + 4, 4, 0, Math.PI * 2);
-    ctx.fill();
+    const alpha = 0.5 + Math.sin(frameCount * 0.3) * 0.3;
+    const iy = player.y + player.h + 6;
+    const ix = player.x + player.w / 2;
+    ctx.strokeStyle = `rgba(180, 220, 255, ${alpha})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i + frameCount * 0.05;
+      ctx.beginPath();
+      ctx.moveTo(ix, iy);
+      ctx.lineTo(ix + Math.cos(angle) * 6, iy + Math.sin(angle) * 6);
+      ctx.stroke();
+    }
   }
 
-  // 加速中エフェクト
+  // 加速中エフェクト（氷の粒子）
   if (accelTimer > 0) {
-    ctx.strokeStyle = `rgba(255, 235, 59, ${0.4 + Math.sin(frameCount * 0.2) * 0.3})`;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(player.x - 3, player.y - 3, player.w + 6, player.h + 6);
-
+    for (let i = 0; i < 4; i++) {
+      const px = player.x - rand(8, 35);
+      const py = player.y + rand(0, player.h);
+      const size = rand(2, 5);
+      ctx.fillStyle = `rgba(180, 230, 255, ${rand(0.3, 0.8)})`;
+      ctx.fillRect(px, py, size, size);
+    }
     // スピードライン
+    ctx.strokeStyle = `rgba(200, 235, 255, 0.4)`;
+    ctx.lineWidth = 1;
     for (let i = 0; i < 3; i++) {
-      const ly = player.y + 5 + i * 14;
-      const lx = player.x - rand(10, 30);
-      ctx.strokeStyle = `rgba(255, 235, 59, ${rand(0.3, 0.7)})`;
+      const ly = player.y + 5 + i * 12;
+      const lx = player.x - rand(10, 25);
       ctx.beginPath();
       ctx.moveTo(lx, ly);
-      ctx.lineTo(lx - rand(10, 25), ly);
+      ctx.lineTo(lx - rand(15, 35), ly);
       ctx.stroke();
     }
   }
@@ -183,13 +252,8 @@ let accelerators = [];
 function spawnObstacle() {
   const w = randInt(OBSTACLE_MIN_W, OBSTACLE_MAX_W);
   const h = randInt(OBSTACLE_MIN_H, OBSTACLE_MAX_H);
-  obstacles.push({
-    x: CANVAS_W + 10,
-    y: GROUND_Y - h,
-    w: w,
-    h: h,
-    color: '#ef5350',
-  });
+  const type = Math.random() < 0.5 ? 'iceberg' : 'iceSpike';
+  obstacles.push({ x: CANVAS_W + 10, y: GROUND_Y - h, w, h, type });
 }
 
 function spawnAccelerator() {
@@ -199,12 +263,11 @@ function spawnAccelerator() {
     y: GROUND_Y - ACCEL_SIZE - yOffset,
     w: ACCEL_SIZE,
     h: ACCEL_SIZE,
-    color: '#ffeb3b',
+    wobble: rand(0, Math.PI * 2),
   });
 }
 
 function spawnObject() {
-  // 30%の確率で加速アイテム、70%で障害物
   if (Math.random() < 0.3) {
     spawnAccelerator();
   } else {
@@ -215,51 +278,99 @@ function spawnObject() {
 function updateObjects() {
   for (let i = obstacles.length - 1; i >= 0; i--) {
     obstacles[i].x -= gameSpeed;
-    if (obstacles[i].x + obstacles[i].w < 0) {
-      obstacles.splice(i, 1);
-    }
+    if (obstacles[i].x + obstacles[i].w < 0) obstacles.splice(i, 1);
   }
   for (let i = accelerators.length - 1; i >= 0; i--) {
     accelerators[i].x -= gameSpeed;
-    if (accelerators[i].x + accelerators[i].w < 0) {
-      accelerators.splice(i, 1);
-    }
+    if (accelerators[i].x + accelerators[i].w < 0) accelerators.splice(i, 1);
   }
 }
 
 function drawObstacles() {
   for (const o of obstacles) {
-    ctx.fillStyle = o.color;
-    ctx.fillRect(o.x, o.y, o.w, o.h);
-    // トゲ模様
-    ctx.fillStyle = '#c62828';
-    const stripes = Math.floor(o.w / 8);
-    for (let i = 0; i < stripes; i++) {
-      ctx.fillRect(o.x + i * 8 + 2, o.y, 2, o.h);
+    if (o.type === 'iceberg') {
+      // 氷塊（角張った半透明ブルー）
+      ctx.fillStyle = '#7ec8e3';
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+      // ハイライト
+      ctx.fillStyle = 'rgba(200, 240, 255, 0.5)';
+      ctx.fillRect(o.x + 3, o.y + 3, o.w * 0.3, o.h - 6);
+      // クラック線
+      ctx.strokeStyle = 'rgba(100, 180, 220, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(o.x + o.w * 0.5, o.y);
+      ctx.lineTo(o.x + o.w * 0.4, o.y + o.h * 0.4);
+      ctx.lineTo(o.x + o.w * 0.6, o.y + o.h * 0.7);
+      ctx.stroke();
+      // 上部の雪
+      ctx.fillStyle = '#e8f4f8';
+      ctx.fillRect(o.x, o.y, o.w, 4);
+    } else {
+      // 氷のトゲ（三角形）
+      ctx.fillStyle = '#a8dce8';
+      ctx.beginPath();
+      ctx.moveTo(o.x + o.w / 2, o.y);
+      ctx.lineTo(o.x + o.w, o.y + o.h);
+      ctx.lineTo(o.x, o.y + o.h);
+      ctx.closePath();
+      ctx.fill();
+      // ハイライト
+      ctx.fillStyle = 'rgba(220, 245, 255, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(o.x + o.w / 2, o.y + 4);
+      ctx.lineTo(o.x + o.w * 0.65, o.y + o.h);
+      ctx.lineTo(o.x + o.w * 0.3, o.y + o.h);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 }
 
 function drawAccelerators() {
   for (const a of accelerators) {
-    // 矢印型アイコン
-    ctx.fillStyle = a.color;
+    // 魚アイテム
+    const cx = a.x + a.w / 2;
+    const cy = a.y + a.h / 2;
+    const wobble = Math.sin(frameCount * 0.08 + a.wobble) * 3;
+
     ctx.save();
-    ctx.translate(a.x + a.w / 2, a.y + a.h / 2);
-    // 回転エフェクト
-    const glow = Math.sin(frameCount * 0.1) * 0.3 + 0.7;
+    ctx.translate(cx, cy + wobble);
+
+    // 魚の体（銀色〜オレンジ）
+    const glow = 0.7 + Math.sin(frameCount * 0.1 + a.wobble) * 0.3;
     ctx.globalAlpha = glow;
-    // 右向き矢印を描画
+
+    // 体（楕円）
+    ctx.fillStyle = '#f39c12';
     ctx.beginPath();
-    ctx.moveTo(a.w * 0.4, 0);
-    ctx.lineTo(-a.w * 0.2, -a.h * 0.35);
-    ctx.lineTo(-a.w * 0.2, -a.h * 0.12);
-    ctx.lineTo(-a.w * 0.4, -a.h * 0.12);
-    ctx.lineTo(-a.w * 0.4, a.h * 0.12);
-    ctx.lineTo(-a.w * 0.2, a.h * 0.12);
-    ctx.lineTo(-a.w * 0.2, a.h * 0.35);
+    ctx.ellipse(0, 0, a.w * 0.4, a.h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 尻尾
+    ctx.beginPath();
+    ctx.moveTo(-a.w * 0.35, 0);
+    ctx.lineTo(-a.w * 0.55, -a.h * 0.2);
+    ctx.lineTo(-a.w * 0.55, a.h * 0.2);
     ctx.closePath();
     ctx.fill();
+
+    // 目
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(a.w * 0.2, -2, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(a.w * 0.22, -2, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // キラキラ
+    ctx.fillStyle = `rgba(255, 255, 200, ${glow * 0.6})`;
+    const sparkX = Math.cos(frameCount * 0.15) * 8;
+    const sparkY = Math.sin(frameCount * 0.15) * 5;
+    ctx.fillRect(sparkX - 1, sparkY - 1, 3, 3);
+
     ctx.globalAlpha = 1;
     ctx.restore();
   }
@@ -269,14 +380,11 @@ function drawAccelerators() {
 // 当たり判定
 // ============================================================
 function checkCollisions() {
-  const pRect = { x: player.x + 3, y: player.y + 3, w: player.w - 6, h: player.h - 6 };
+  const pRect = { x: player.x + 4, y: player.y + 4, w: player.w - 8, h: player.h - 8 };
 
   for (const o of obstacles) {
-    if (rectsOverlap(pRect, o)) {
-      return 'hit';
-    }
+    if (rectsOverlap(pRect, o)) return 'hit';
   }
-
   for (let i = accelerators.length - 1; i >= 0; i--) {
     if (rectsOverlap(pRect, accelerators[i])) {
       accelerators.splice(i, 1);
@@ -287,74 +395,244 @@ function checkCollisions() {
 }
 
 // ============================================================
-// 背景演出
+// 背景 — 南極
 // ============================================================
-function initStars() {
-  stars = [];
-  for (let i = 0; i < 50; i++) {
-    stars.push({
+function initSnowflakes() {
+  snowflakes = [];
+  for (let i = 0; i < 60; i++) {
+    snowflakes.push({
       x: rand(0, CANVAS_W),
-      y: rand(0, GROUND_Y - 20),
-      size: rand(1, 2.5),
-      speed: rand(0.3, 1.2),
+      y: rand(0, GROUND_Y),
+      size: rand(1, 3),
+      speedX: rand(0.2, 1),
+      speedY: rand(0.3, 1.2),
+      sway: rand(0, Math.PI * 2),
     });
   }
 }
 
-function initGroundDots() {
-  groundDots = [];
-  for (let i = 0; i < 30; i++) {
-    groundDots.push({
+function initMountains() {
+  mountains = [];
+  // 遠景の山脈（3層）
+  for (let layer = 0; layer < 3; layer++) {
+    const peaks = [];
+    const numPeaks = 5 + layer * 2;
+    for (let i = 0; i < numPeaks; i++) {
+      peaks.push({
+        x: (CANVAS_W / (numPeaks - 1)) * i,
+        h: rand(40, 90) - layer * 15,
+      });
+    }
+    mountains.push({ peaks, layer, offset: 0 });
+  }
+}
+
+function initGroundMarks() {
+  groundMarks = [];
+  for (let i = 0; i < 25; i++) {
+    groundMarks.push({
       x: rand(0, CANVAS_W),
-      speed: rand(0.5, 1),
+      w: rand(3, 12),
+      speed: rand(0.6, 1),
     });
+  }
+}
+
+function initAuroraWaves() {
+  auroraWaves = [];
+  for (let i = 0; i < 4; i++) {
+    auroraWaves.push({
+      offset: rand(0, Math.PI * 2),
+      amplitude: rand(15, 35),
+      frequency: rand(0.005, 0.012),
+      y: rand(30, 100),
+      hue: rand(100, 280),
+      speed: rand(0.005, 0.015),
+    });
+  }
+}
+
+function updateStage() {
+  stageTimer++;
+  // 舞台は30秒ごとに変化
+  const cycle = Math.floor(stageTimer / 1800) % 3;
+  if (cycle === 0) stageMode = 'clear';
+  else if (cycle === 1) stageMode = 'aurora';
+  else stageMode = 'blizzard';
+
+  // 吹雪パーティクル管理
+  if (stageMode === 'blizzard') {
+    if (blizzardParticles.length < 80) {
+      blizzardParticles.push({
+        x: CANVAS_W + rand(0, 50),
+        y: rand(0, GROUND_Y),
+        size: rand(1, 3),
+        speedX: rand(3, 8),
+        speedY: rand(0.5, 2),
+      });
+    }
+  }
+  for (let i = blizzardParticles.length - 1; i >= 0; i--) {
+    blizzardParticles[i].x -= blizzardParticles[i].speedX;
+    blizzardParticles[i].y += blizzardParticles[i].speedY;
+    if (blizzardParticles[i].x < -10 || blizzardParticles[i].y > GROUND_Y) {
+      if (stageMode === 'blizzard') {
+        blizzardParticles[i].x = CANVAS_W + rand(0, 50);
+        blizzardParticles[i].y = rand(0, GROUND_Y * 0.5);
+      } else {
+        blizzardParticles.splice(i, 1);
+      }
+    }
   }
 }
 
 function updateBackground() {
-  for (const s of stars) {
-    s.x -= s.speed * (gameSpeed / BASE_SPEED);
-    if (s.x < 0) { s.x = CANVAS_W; s.y = rand(0, GROUND_Y - 20); }
+  // 雪
+  for (const s of snowflakes) {
+    s.x -= s.speedX * (gameSpeed / BASE_SPEED);
+    s.y += s.speedY;
+    s.sway += 0.02;
+    s.x += Math.sin(s.sway) * 0.3;
+    if (s.y > GROUND_Y) { s.y = -5; s.x = rand(0, CANVAS_W); }
+    if (s.x < -5) { s.x = CANVAS_W + 5; }
   }
-  for (const d of groundDots) {
-    d.x -= d.speed * gameSpeed;
-    if (d.x < 0) d.x = CANVAS_W;
+  // 山のパララックス
+  for (const m of mountains) {
+    m.offset -= gameSpeed * (0.1 + m.layer * 0.1);
+  }
+  // 地面マーク
+  for (const g of groundMarks) {
+    g.x -= g.speed * gameSpeed;
+    if (g.x < -15) g.x = CANVAS_W + rand(0, 30);
+  }
+  // 舞台演出
+  updateStage();
+}
+
+function drawSky() {
+  // 南極の空（グラデーション）
+  const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  if (stageMode === 'aurora') {
+    grad.addColorStop(0, '#0a0a20');
+    grad.addColorStop(0.4, '#0d1535');
+    grad.addColorStop(1, '#1a2a4a');
+  } else if (stageMode === 'blizzard') {
+    grad.addColorStop(0, '#2a3a55');
+    grad.addColorStop(0.5, '#3a4a65');
+    grad.addColorStop(1, '#4a5a75');
+  } else {
+    grad.addColorStop(0, '#0b1a3b');
+    grad.addColorStop(0.5, '#132850');
+    grad.addColorStop(1, '#1e3a5f');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CANVAS_W, GROUND_Y);
+}
+
+function drawAurora() {
+  if (stageMode !== 'aurora') return;
+  for (const wave of auroraWaves) {
+    wave.offset += wave.speed;
+    ctx.beginPath();
+    ctx.moveTo(0, wave.y);
+    for (let x = 0; x <= CANVAS_W; x += 4) {
+      const y = wave.y + Math.sin(x * wave.frequency + wave.offset + frameCount * 0.01) * wave.amplitude;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(CANVAS_W, wave.y + 40);
+    ctx.lineTo(0, wave.y + 40);
+    ctx.closePath();
+    const hue = (wave.hue + frameCount * 0.2) % 360;
+    ctx.fillStyle = `hsla(${hue}, 70%, 60%, 0.08)`;
+    ctx.fill();
   }
 }
 
-function drawBackground() {
-  // 空
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-  // 加速中はちょっと明るく
-  if (accelTimer > 0) {
-    ctx.fillStyle = `rgba(255, 235, 59, 0.03)`;
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+function drawMountains() {
+  for (let mi = mountains.length - 1; mi >= 0; mi--) {
+    const m = mountains[mi];
+    const brightness = 25 + m.layer * 12;
+    ctx.fillStyle = `rgb(${brightness + 30}, ${brightness + 40}, ${brightness + 55})`;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    for (const p of m.peaks) {
+      const px = ((p.x + m.offset) % (CANVAS_W + 100)) - 50;
+      ctx.lineTo(px, GROUND_Y - p.h);
+    }
+    ctx.lineTo(CANVAS_W, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
+    // 山頂の雪
+    ctx.fillStyle = `rgba(220, 235, 250, ${0.15 + m.layer * 0.08})`;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    for (const p of m.peaks) {
+      const px = ((p.x + m.offset) % (CANVAS_W + 100)) - 50;
+      ctx.lineTo(px, GROUND_Y - p.h);
+    }
+    ctx.lineTo(CANVAS_W, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
   }
+}
 
-  // 星
-  for (const s of stars) {
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + Math.sin(frameCount * 0.02 + s.x) * 0.2})`;
-    ctx.fillRect(s.x, s.y, s.size, s.size);
-  }
-
-  // 地面
-  ctx.fillStyle = '#2d2d4a';
+function drawGround() {
+  // 雪原
+  const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, CANVAS_H);
+  groundGrad.addColorStop(0, '#d6eaf8');
+  groundGrad.addColorStop(0.3, '#c4ddf0');
+  groundGrad.addColorStop(1, '#a8c8e0');
+  ctx.fillStyle = groundGrad;
   ctx.fillRect(0, GROUND_Y, CANVAS_W, CANVAS_H - GROUND_Y);
 
-  // 地面のライン
-  ctx.strokeStyle = '#3d3d5c';
-  ctx.lineWidth = 2;
+  // 雪面のキラキラ
+  for (const g of groundMarks) {
+    const alpha = 0.2 + Math.sin(frameCount * 0.03 + g.x) * 0.15;
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fillRect(g.x, GROUND_Y + 4, g.w, 2);
+  }
+
+  // 地面ライン
+  ctx.strokeStyle = '#b8d8f0';
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, GROUND_Y);
   ctx.lineTo(CANVAS_W, GROUND_Y);
   ctx.stroke();
+}
 
-  // 地面ドット
-  ctx.fillStyle = '#3d3d5c';
-  for (const d of groundDots) {
-    ctx.fillRect(d.x, GROUND_Y + 8, 2, 2);
+function drawSnowflakes() {
+  for (const s of snowflakes) {
+    const alpha = 0.3 + Math.sin(frameCount * 0.02 + s.sway) * 0.2;
+    ctx.fillStyle = `rgba(230, 240, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawBlizzard() {
+  if (blizzardParticles.length === 0) return;
+  ctx.fillStyle = 'rgba(220, 235, 255, 0.15)';
+  ctx.fillRect(0, 0, CANVAS_W, GROUND_Y);
+  for (const p of blizzardParticles) {
+    ctx.fillStyle = `rgba(240, 248, 255, ${rand(0.4, 0.9)})`;
+    ctx.fillRect(p.x, p.y, p.size, p.size * 0.5);
+  }
+}
+
+function drawBackground() {
+  drawSky();
+  drawAurora();
+  drawMountains();
+  drawGround();
+  drawSnowflakes();
+  drawBlizzard();
+
+  // 加速中は雪がキラキラ
+  if (accelTimer > 0) {
+    ctx.fillStyle = `rgba(200, 230, 255, 0.04)`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   }
 }
 
@@ -362,83 +640,128 @@ function drawBackground() {
 // UI描画
 // ============================================================
 function drawUI() {
-  ctx.fillStyle = '#fff';
+  // 半透明の背景バー
+  ctx.fillStyle = 'rgba(10, 20, 40, 0.5)';
+  ctx.fillRect(0, 0, CANVAS_W, 68);
+
+  ctx.fillStyle = '#e0f0ff';
   ctx.font = '16px "Segoe UI", sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(`SCORE: ${Math.floor(score)}`, CANVAS_W - 20, 30);
-  ctx.fillText(`HI: ${Math.floor(highScore)}`, CANVAS_W - 20, 52);
+  ctx.fillText(`SCORE: ${Math.floor(score)}`, CANVAS_W - 20, 28);
+  ctx.fillStyle = '#8ab8d8';
+  ctx.fillText(`HI: ${Math.floor(highScore)}`, CANVAS_W - 20, 50);
 
   ctx.textAlign = 'left';
-  ctx.fillText(`SPEED: ${gameSpeed.toFixed(1)}`, 20, 30);
+  ctx.fillStyle = '#e0f0ff';
+  ctx.fillText(`SPEED: ${gameSpeed.toFixed(1)}`, 20, 28);
+
+  // 舞台表示
+  const stageLabel = stageMode === 'aurora' ? 'AURORA' : stageMode === 'blizzard' ? 'BLIZZARD' : 'CLEAR';
+  ctx.fillStyle = stageMode === 'aurora' ? '#80ffb0' : stageMode === 'blizzard' ? '#a0c0e0' : '#7ab8d8';
+  ctx.font = '12px "Segoe UI", sans-serif';
+  ctx.fillText(stageLabel, 20, 50);
 
   if (accelTimer > 0) {
-    ctx.fillStyle = '#ffeb3b';
-    ctx.fillText(`⚡ BOOST x${scoreMultiplier}`, 20, 52);
+    ctx.fillStyle = '#f39c12';
+    ctx.font = '15px "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`BOOST x${scoreMultiplier}`, 120, 50);
 
-    // ブーストゲージ
-    const gaugeW = 80;
+    const gaugeW = 70;
     const gaugeH = 4;
     const ratio = accelTimer / ACCEL_DURATION;
-    ctx.fillStyle = '#333';
-    ctx.fillRect(20, 58, gaugeW, gaugeH);
-    ctx.fillStyle = '#ffeb3b';
-    ctx.fillRect(20, 58, gaugeW * ratio, gaugeH);
+    ctx.fillStyle = 'rgba(50,50,50,0.5)';
+    ctx.fillRect(120, 56, gaugeW, gaugeH);
+    ctx.fillStyle = '#f39c12';
+    ctx.fillRect(120, 56, gaugeW * ratio, gaugeH);
   }
 }
 
 function drawTitle() {
-  drawBackground();
+  // タイトル用背景（静止）
+  const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  grad.addColorStop(0, '#0b1a3b');
+  grad.addColorStop(0.5, '#132850');
+  grad.addColorStop(0.7, '#1e3a5f');
+  grad.addColorStop(0.85, '#d6eaf8');
+  grad.addColorStop(1, '#a8c8e0');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // タイトル画面のオーロラ
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    for (let x = 0; x <= CANVAS_W; x += 4) {
+      const y = 60 + i * 20 + Math.sin(x * 0.008 + frameCount * 0.01 + i) * 25;
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(CANVAS_W, 120);
+    ctx.lineTo(0, 120);
+    ctx.closePath();
+    const hue = (120 + i * 60 + frameCount * 0.3) % 360;
+    ctx.fillStyle = `hsla(${hue}, 60%, 55%, 0.06)`;
+    ctx.fill();
+  }
+
+  // ペンギン（タイトル画面中央）
+  drawPenguin(CANVAS_W / 2 - 16, 185, 32, 38);
 
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 48px "Segoe UI", sans-serif';
+  ctx.font = 'bold 46px "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('SHINSOKU', CANVAS_W / 2, 140);
-
-  ctx.font = '18px "Segoe UI", sans-serif';
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('神速ダッシュランナー', CANVAS_W / 2, 175);
+  ctx.fillText('SHINSOKU', CANVAS_W / 2, 148);
 
   ctx.font = '16px "Segoe UI", sans-serif';
-  ctx.fillStyle = '#4fc3f7';
-  ctx.fillText('スペースキー or タップ でスタート', CANVAS_W / 2, 240);
+  ctx.fillStyle = '#8ab8d8';
+  ctx.fillText('- 南極ペンギンランナー -', CANVAS_W / 2, 175);
 
-  // 説明
-  ctx.font = '14px "Segoe UI", sans-serif';
-  ctx.fillStyle = '#4fc3f7';
-  ctx.fillText('二段ジャンプ可能！ 空中でもう一度押せる', CANVAS_W / 2, 280);
-  ctx.fillStyle = '#ef5350';
-  ctx.fillText('■ 障害物 → ジャンプで避ける', CANVAS_W / 2, 305);
-  ctx.fillStyle = '#ffeb3b';
-  ctx.fillText('▶ 加速アイテム → 取るとスピードUP！', CANVAS_W / 2, 330);
+  ctx.font = '15px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#c0ddf0';
+  ctx.fillText('スペースキー or タップ でスタート', CANVAS_W / 2, 252);
+
+  ctx.font = '13px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#80b8d8';
+  ctx.fillText('二段ジャンプ可能！  空中でもう一度押せる', CANVAS_W / 2, 285);
+  ctx.fillStyle = '#7ec8e3';
+  ctx.fillText('氷の障害物をジャンプで避けよう', CANVAS_W / 2, 308);
+  ctx.fillStyle = '#f39c12';
+  ctx.fillText('魚を取るとスピードUP！', CANVAS_W / 2, 331);
 
   if (highScore > 0) {
-    ctx.fillStyle = '#aaa';
-    ctx.fillText(`ハイスコア: ${Math.floor(highScore)}`, CANVAS_W / 2, 360);
+    ctx.fillStyle = '#c0ddf0';
+    ctx.fillText(`ハイスコア: ${Math.floor(highScore)}`, CANVAS_W / 2, 370);
   }
 }
 
 function drawGameOver() {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.fillStyle = 'rgba(5, 15, 35, 0.7)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  ctx.fillStyle = '#ef5350';
+  ctx.fillStyle = '#7ec8e3';
   ctx.font = 'bold 40px "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('GAME OVER', CANVAS_W / 2, 150);
+  ctx.fillText('GAME OVER', CANVAS_W / 2, 145);
 
-  ctx.fillStyle = '#fff';
+  // やられペンギン
+  ctx.save();
+  ctx.translate(CANVAS_W / 2, 195);
+  ctx.rotate(0.3);
+  drawPenguin(-16, -19, 32, 38);
+  ctx.restore();
+
+  ctx.fillStyle = '#e0f0ff';
   ctx.font = '22px "Segoe UI", sans-serif';
-  ctx.fillText(`SCORE: ${Math.floor(score)}`, CANVAS_W / 2, 200);
+  ctx.fillText(`SCORE: ${Math.floor(score)}`, CANVAS_W / 2, 250);
 
   if (score >= highScore && score > 0) {
-    ctx.fillStyle = '#ffeb3b';
+    ctx.fillStyle = '#f39c12';
     ctx.font = '18px "Segoe UI", sans-serif';
-    ctx.fillText('🏆 NEW RECORD!', CANVAS_W / 2, 235);
+    ctx.fillText('NEW RECORD!', CANVAS_W / 2, 282);
   }
 
-  ctx.fillStyle = '#aaa';
-  ctx.font = '16px "Segoe UI", sans-serif';
-  ctx.fillText('スペースキー or タップ でリトライ', CANVAS_W / 2, 290);
+  ctx.fillStyle = '#8ab8d8';
+  ctx.font = '15px "Segoe UI", sans-serif';
+  ctx.fillText('スペースキー or タップ でリトライ', CANVAS_W / 2, 325);
 }
 
 // ============================================================
@@ -449,6 +772,7 @@ function resetGame() {
   player.vy = 0;
   player.onGround = true;
   player.jumpCount = 0;
+  player.runFrame = 0;
   obstacles = [];
   accelerators = [];
   gameSpeed = BASE_SPEED;
@@ -457,9 +781,14 @@ function resetGame() {
   score = 0;
   frameCount = 0;
   safeZoneTimer = 0;
+  stageTimer = 0;
+  stageMode = 'clear';
+  blizzardParticles = [];
   spawnTimer = randInt(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX);
-  initStars();
-  initGroundDots();
+  initSnowflakes();
+  initMountains();
+  initGroundMarks();
+  initAuroraWaves();
 }
 
 function update() {
@@ -470,12 +799,8 @@ function update() {
   updateObjects();
   updateBackground();
 
-  // 自然加速
-  if (gameSpeed < MAX_SPEED) {
-    gameSpeed += SPEED_INCREMENT;
-  }
+  if (gameSpeed < MAX_SPEED) gameSpeed += SPEED_INCREMENT;
 
-  // 加速タイマー
   if (accelTimer > 0) {
     accelTimer--;
     if (accelTimer <= 0) {
@@ -484,25 +809,20 @@ function update() {
     }
   }
 
-  // セーフゾーンタイマー
   if (safeZoneTimer > 0) safeZoneTimer--;
 
-  // スポーン（反応時間ベース）
   spawnTimer--;
   if (spawnTimer <= 0) {
-    // セーフゾーン中は加速アイテムのみ出す
     if (safeZoneTimer > 0) {
       if (Math.random() < 0.4) spawnAccelerator();
     } else {
       spawnObject();
     }
-    // 反応時間ベース: 速度に応じて最低間隔を保証
     const reactionGap = MIN_REACTION_FRAMES + Math.floor(gameSpeed * 1.5);
     const maxInterval = reactionGap + randInt(20, 50);
     spawnTimer = randInt(reactionGap, maxInterval);
   }
 
-  // 当たり判定
   const result = checkCollisions();
   if (result === 'hit') {
     state = 'gameover';
@@ -513,28 +833,20 @@ function update() {
     gameSpeed = Math.min(MAX_SPEED, gameSpeed + ACCEL_BOOST);
     accelTimer = ACCEL_DURATION;
     scoreMultiplier = SCORE_MULTIPLIER_BOOST;
-    safeZoneTimer = 90;  // 1.5秒間は障害物を出さない
+    safeZoneTimer = 90;
   }
 
-  // スコア加算
   score += 0.1 * (gameSpeed / BASE_SPEED) * scoreMultiplier;
 }
 
 function draw() {
-  if (state === 'title') {
-    drawTitle();
-    return;
-  }
-
+  if (state === 'title') { drawTitle(); return; }
   drawBackground();
   drawObstacles();
   drawAccelerators();
   playerDraw();
   drawUI();
-
-  if (state === 'gameover') {
-    drawGameOver();
-  }
+  if (state === 'gameover') drawGameOver();
 }
 
 function gameLoop() {
@@ -547,37 +859,24 @@ function gameLoop() {
 // 入力
 // ============================================================
 function handleAction() {
-  if (state === 'title') {
-    resetGame();
-    state = 'playing';
-  } else if (state === 'playing') {
-    playerJump();
-  } else if (state === 'gameover') {
-    state = 'title';
-  }
+  if (state === 'title') { resetGame(); state = 'playing'; }
+  else if (state === 'playing') { playerJump(); }
+  else if (state === 'gameover') { state = 'title'; }
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' || e.code === 'ArrowUp') {
-    e.preventDefault();
-    handleAction();
-  }
+  if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); handleAction(); }
 });
-
-canvas.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  handleAction();
-}, { passive: false });
-
-canvas.addEventListener('mousedown', (e) => {
-  handleAction();
-});
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleAction(); }, { passive: false });
+canvas.addEventListener('mousedown', () => { handleAction(); });
 
 // ============================================================
 // 起動
 // ============================================================
-initStars();
-initGroundDots();
+initSnowflakes();
+initMountains();
+initGroundMarks();
+initAuroraWaves();
 gameLoop();
 </script>
 </body>
