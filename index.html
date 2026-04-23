@@ -92,6 +92,9 @@ let accelTimer = 0;
 let scoreMultiplier = 1;
 let frameCount = 0;
 let spawnTimer = 0;
+let safeZoneTimer = 0;           // 加速直後の安全期間
+
+const MIN_REACTION_FRAMES = 30;  // 最低反応時間（0.5秒）
 
 // 背景の星
 let stars = [];
@@ -108,13 +111,16 @@ const player = {
   h: PLAYER_H,
   vy: 0,
   onGround: true,
+  jumpCount: 0,      // 0=地上, 1=一段目, 2=二段目
+  maxJumps: 2,
   color: '#4fc3f7',
 };
 
 function playerJump() {
-  if (player.onGround) {
-    player.vy = JUMP_FORCE;
+  if (player.jumpCount < player.maxJumps) {
+    player.vy = player.jumpCount === 0 ? JUMP_FORCE : JUMP_FORCE * 0.85;
     player.onGround = false;
+    player.jumpCount++;
   }
 }
 
@@ -125,6 +131,7 @@ function playerUpdate() {
     player.y = GROUND_Y - player.h;
     player.vy = 0;
     player.onGround = true;
+    player.jumpCount = 0;
   }
 }
 
@@ -138,6 +145,15 @@ function playerDraw() {
   ctx.fillRect(player.x + 18, player.y + 8, 7, 7);
   ctx.fillStyle = '#1a1a2e';
   ctx.fillRect(player.x + 21, player.y + 10, 3, 3);
+
+  // 二段ジャンプインジケーター
+  if (!player.onGround && player.jumpCount < player.maxJumps) {
+    // 二段ジャンプ可能 → 足元に小さい光
+    ctx.fillStyle = `rgba(79, 195, 247, ${0.5 + Math.sin(frameCount * 0.3) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(player.x + player.w / 2, player.y + player.h + 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // 加速中エフェクト
   if (accelTimer > 0) {
@@ -388,10 +404,12 @@ function drawTitle() {
 
   // 説明
   ctx.font = '14px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#4fc3f7';
+  ctx.fillText('二段ジャンプ可能！ 空中でもう一度押せる', CANVAS_W / 2, 280);
   ctx.fillStyle = '#ef5350';
-  ctx.fillText('■ 障害物 → ジャンプで避ける', CANVAS_W / 2, 290);
+  ctx.fillText('■ 障害物 → ジャンプで避ける', CANVAS_W / 2, 305);
   ctx.fillStyle = '#ffeb3b';
-  ctx.fillText('▶ 加速アイテム → 取るとスピードUP！', CANVAS_W / 2, 315);
+  ctx.fillText('▶ 加速アイテム → 取るとスピードUP！', CANVAS_W / 2, 330);
 
   if (highScore > 0) {
     ctx.fillStyle = '#aaa';
@@ -430,6 +448,7 @@ function resetGame() {
   player.y = GROUND_Y - PLAYER_H;
   player.vy = 0;
   player.onGround = true;
+  player.jumpCount = 0;
   obstacles = [];
   accelerators = [];
   gameSpeed = BASE_SPEED;
@@ -437,6 +456,7 @@ function resetGame() {
   scoreMultiplier = 1;
   score = 0;
   frameCount = 0;
+  safeZoneTimer = 0;
   spawnTimer = randInt(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX);
   initStars();
   initGroundDots();
@@ -464,14 +484,22 @@ function update() {
     }
   }
 
-  // スポーン
+  // セーフゾーンタイマー
+  if (safeZoneTimer > 0) safeZoneTimer--;
+
+  // スポーン（反応時間ベース）
   spawnTimer--;
   if (spawnTimer <= 0) {
-    spawnObject();
-    // スピードが上がるほど間隔が短くなる
-    const minInterval = Math.max(25, SPAWN_INTERVAL_MIN - (gameSpeed - BASE_SPEED) * 3);
-    const maxInterval = Math.max(50, SPAWN_INTERVAL_MAX - (gameSpeed - BASE_SPEED) * 5);
-    spawnTimer = randInt(minInterval, maxInterval);
+    // セーフゾーン中は加速アイテムのみ出す
+    if (safeZoneTimer > 0) {
+      if (Math.random() < 0.4) spawnAccelerator();
+    } else {
+      spawnObject();
+    }
+    // 反応時間ベース: 速度に応じて最低間隔を保証
+    const reactionGap = MIN_REACTION_FRAMES + Math.floor(gameSpeed * 1.5);
+    const maxInterval = reactionGap + randInt(20, 50);
+    spawnTimer = randInt(reactionGap, maxInterval);
   }
 
   // 当たり判定
@@ -485,6 +513,7 @@ function update() {
     gameSpeed = Math.min(MAX_SPEED, gameSpeed + ACCEL_BOOST);
     accelTimer = ACCEL_DURATION;
     scoreMultiplier = SCORE_MULTIPLIER_BOOST;
+    safeZoneTimer = 90;  // 1.5秒間は障害物を出さない
   }
 
   // スコア加算
