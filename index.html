@@ -109,10 +109,6 @@ let blizzardParticles = [];
 // 背景動物（ZENモード用）
 let bgAnimals = [];
 
-// ペンギン種別
-const PENGUIN_SPECIES = ['chinstrap', 'gentoo', 'adelie'];
-const PENGUIN_NAMES = { chinstrap: 'ヒゲペンギン', gentoo: 'ジェンツーペンギン', adelie: 'アデリーペンギン' };
-let currentSpecies = 'chinstrap';
 
 // ============================================================
 // オーディオシステム
@@ -298,19 +294,17 @@ function playerUpdate() {
   player.runFrame += gameSpeed * 0.15;
 }
 
-function drawPenguin(x, y, w, h, species) {
-  species = species || currentSpecies;
+function drawPenguin(x, y, w, h) {
   const cx = x + w / 2;
   const legSwing = player.onGround ? Math.sin(player.runFrame) * 4 : 0;
 
-  // 足の色: ジェンツーは黄色、他はピンク
-  const footColor = species === 'gentoo' ? '#e6b422' : '#e8a0a0';
-  ctx.fillStyle = footColor;
+  // 足（オレンジ）
+  ctx.fillStyle = '#e67e22';
   ctx.fillRect(cx - 8 + legSwing, y + h - 6, 7, 6);
   ctx.fillRect(cx + 1 - legSwing, y + h - 6, 7, 6);
 
   // 体（黒）
-  ctx.fillStyle = '#1a1a2e';
+  ctx.fillStyle = '#1c1c30';
   ctx.beginPath();
   ctx.ellipse(cx, y + h * 0.5, w * 0.45, h * 0.48, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -322,116 +316,46 @@ function drawPenguin(x, y, w, h, species) {
   ctx.fill();
 
   // 頭（黒）
-  ctx.fillStyle = '#1a1a2e';
+  ctx.fillStyle = '#1c1c30';
   ctx.beginPath();
-  ctx.arc(cx, y + 12, 12, 0, Math.PI * 2);
+  ctx.arc(cx, y + 12, 11, 0, Math.PI * 2);
   ctx.fill();
 
-  // === 種別ごとの頭部 ===
-  if (species === 'chinstrap') {
-    // ヒゲペンギン: 白い顔面、あごの黒い線
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(cx + 3, y + 13, 8, -0.8, 1.2);
-    ctx.fill();
-    // 目
-    ctx.fillStyle = '#594a2a';
-    ctx.beginPath();
-    ctx.arc(cx + 6, y + 10, 2, 0, Math.PI * 2);
-    ctx.fill();
-    // くちばし（黒）
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.moveTo(cx + 10, y + 13);
-    ctx.lineTo(cx + 17, y + 15);
-    ctx.lineTo(cx + 10, y + 17);
-    ctx.closePath();
-    ctx.fill();
-    // ヒゲ模様（あごの下の黒い細線）
-    ctx.strokeStyle = '#1a1a2e';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx - 5, y + 17);
-    ctx.quadraticCurveTo(cx + 2, y + 22, cx + 10, y + 17);
-    ctx.stroke();
+  // 目（白丸＋黒瞳）
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx + 5, y + 10, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(cx + 6, y + 10, 1.8, 0, Math.PI * 2);
+  ctx.fill();
 
-  } else if (species === 'gentoo') {
-    // ジェンツーペンギン: 目をつなぐ白い模様、オレンジのくちばし
-    // 頭頂の白い三角パッチ（目をつなぐように）
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.moveTo(cx - 4, y + 5);
-    ctx.quadraticCurveTo(cx + 1, y + 1, cx + 6, y + 5);
-    ctx.quadraticCurveTo(cx + 8, y + 8, cx + 6, y + 10);
-    ctx.lineTo(cx - 2, y + 10);
-    ctx.quadraticCurveTo(cx - 5, y + 8, cx - 4, y + 5);
-    ctx.fill();
-    // 目
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(cx + 5, y + 10, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.arc(cx + 5.5, y + 10, 1.8, 0, Math.PI * 2);
-    ctx.fill();
-    // くちばし（オレンジ〜赤、先端が黒）
-    ctx.fillStyle = '#e67e22';
-    ctx.beginPath();
-    ctx.moveTo(cx + 10, y + 12);
-    ctx.lineTo(cx + 19, y + 15);
-    ctx.lineTo(cx + 10, y + 17);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.moveTo(cx + 16, y + 14);
-    ctx.lineTo(cx + 19, y + 15);
-    ctx.lineTo(cx + 16, y + 16);
-    ctx.closePath();
-    ctx.fill();
+  // くちばし（オレンジ三角）
+  ctx.fillStyle = '#e67e22';
+  ctx.beginPath();
+  ctx.moveTo(cx + 9, y + 13);
+  ctx.lineTo(cx + 16, y + 15);
+  ctx.lineTo(cx + 9, y + 17);
+  ctx.closePath();
+  ctx.fill();
 
-  } else {
-    // アデリーペンギン: 真っ黒な頭、白いアイリング
-    // 目（白いリング）
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx + 5, y + 10, 4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.arc(cx + 5.5, y + 10, 2, 0, Math.PI * 2);
-    ctx.fill();
-    // くちばし（くすんだオレンジ＋黒）
-    ctx.fillStyle = '#8b5a2b';
-    ctx.beginPath();
-    ctx.moveTo(cx + 10, y + 13);
-    ctx.lineTo(cx + 17, y + 15);
-    ctx.lineTo(cx + 10, y + 17);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.moveTo(cx + 14, y + 14);
-    ctx.lineTo(cx + 17, y + 15);
-    ctx.lineTo(cx + 14, y + 16);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  // 翼（共通）
+  // 翼
   const wingAngle = player.onGround ? Math.sin(player.runFrame * 1.5) * 0.3 : -0.5;
-  ctx.fillStyle = '#2c2c4a';
+  ctx.fillStyle = '#2a2a48';
   ctx.save();
   ctx.translate(cx - w * 0.35, y + h * 0.35);
   ctx.rotate(-0.3 + wingAngle);
-  ctx.fillRect(-3, 0, 6, h * 0.35);
+  ctx.beginPath();
+  ctx.ellipse(0, h * 0.17, 4, h * 0.19, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
   ctx.save();
   ctx.translate(cx + w * 0.35, y + h * 0.35);
   ctx.rotate(0.3 - wingAngle);
-  ctx.fillRect(-3, 0, 6, h * 0.35);
+  ctx.beginPath();
+  ctx.ellipse(0, h * 0.17, 4, h * 0.19, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -822,33 +746,6 @@ function drawSky() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, CANVAS_W, GROUND_Y);
 
-  // 白夜の太陽（低い位置）
-  const phaseFloat = skyTime * SKY_PHASES.length;
-  const phaseIndex = Math.floor(phaseFloat) % SKY_PHASES.length;
-  const t = phaseFloat - Math.floor(phaseFloat);
-  if (phaseIndex === 2 || (phaseIndex === 1 && t > 0.5) || (phaseIndex === 3 && t < 0.5)) {
-    // 太陽を地平線付近に描画
-    let sunAlpha = 0;
-    if (phaseIndex === 2) sunAlpha = 0.8;
-    else if (phaseIndex === 1) sunAlpha = (t - 0.5) * 1.6;
-    else sunAlpha = (0.5 - t) * 1.6;
-
-    const sunX = CANVAS_W * 0.7;
-    const sunY = GROUND_Y - 15 - Math.sin(skyTime * Math.PI * 2) * 20;
-    // 光芒
-    const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 80);
-    sunGrad.addColorStop(0, `rgba(255, 230, 180, ${sunAlpha * 0.4})`);
-    sunGrad.addColorStop(0.3, `rgba(255, 200, 140, ${sunAlpha * 0.15})`);
-    sunGrad.addColorStop(1, 'rgba(255, 200, 140, 0)');
-    ctx.fillStyle = sunGrad;
-    ctx.fillRect(sunX - 80, sunY - 80, 160, 160);
-    // 太陽本体
-    ctx.fillStyle = `rgba(255, 240, 200, ${sunAlpha * 0.9})`;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, 12, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   // 星（暗い時だけ）
   if (sky.starAlpha > 0.02) {
     for (const s of snowflakes) {
@@ -921,27 +818,75 @@ function drawMountainPath(m) {
   ctx.closePath();
 }
 
+function getSunInfo() {
+  const phaseFloat = skyTime * SKY_PHASES.length;
+  const phaseIndex = Math.floor(phaseFloat) % SKY_PHASES.length;
+  const t = phaseFloat - Math.floor(phaseFloat);
+  let sunAlpha = 0;
+  if (phaseIndex === 2) sunAlpha = 0.8;
+  else if (phaseIndex === 1 && t > 0.4) sunAlpha = (t - 0.4) * 1.67;
+  else if (phaseIndex === 3 && t < 0.6) sunAlpha = (0.6 - t) * 1.67;
+  const sunX = CANVAS_W * 0.7;
+  const sunY = GROUND_Y - 30 - Math.sin(skyTime * Math.PI * 2) * 40;
+  return { x: sunX, y: sunY, alpha: sunAlpha };
+}
+
+function drawSunBehind() {
+  // 山の裏からにじむ光（山の前に描画）
+  const sun = getSunInfo();
+  if (sun.alpha < 0.01) return;
+  // 広い光芒（空気中の拡散光）
+  const glow = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 160);
+  glow.addColorStop(0, `rgba(255, 235, 190, ${sun.alpha * 0.25})`);
+  glow.addColorStop(0.3, `rgba(255, 215, 160, ${sun.alpha * 0.1})`);
+  glow.addColorStop(0.7, `rgba(255, 200, 150, ${sun.alpha * 0.03})`);
+  glow.addColorStop(1, 'rgba(255, 200, 150, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(sun.x - 160, sun.y - 160, 320, 320);
+}
+
+function drawSunFront() {
+  // 山の手前に描く太陽のにじみ（山を透かして見える効果）
+  const sun = getSunInfo();
+  if (sun.alpha < 0.01) return;
+  // 太陽本体（柔らかいグロー）
+  const core = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 30);
+  core.addColorStop(0, `rgba(255, 245, 220, ${sun.alpha * 0.7})`);
+  core.addColorStop(0.3, `rgba(255, 235, 200, ${sun.alpha * 0.35})`);
+  core.addColorStop(0.7, `rgba(255, 220, 180, ${sun.alpha * 0.08})`);
+  core.addColorStop(1, 'rgba(255, 220, 180, 0)');
+  ctx.fillStyle = core;
+  ctx.fillRect(sun.x - 30, sun.y - 30, 60, 60);
+  // 地平線の暖色ライン
+  const horizonGlow = ctx.createLinearGradient(sun.x - 200, 0, sun.x + 200, 0);
+  horizonGlow.addColorStop(0, 'rgba(255, 200, 140, 0)');
+  horizonGlow.addColorStop(0.5, `rgba(255, 210, 160, ${sun.alpha * 0.1})`);
+  horizonGlow.addColorStop(1, 'rgba(255, 200, 140, 0)');
+  ctx.fillStyle = horizonGlow;
+  ctx.fillRect(sun.x - 200, GROUND_Y - 8, 400, 8);
+}
+
 function drawMountains() {
   const sky = getSkyColors();
   const brightness = (sky.bot[0] + sky.bot[1] + sky.bot[2]) / 3;
 
-  // 奥のレイヤーから順に描画
   for (let mi = 0; mi < mountains.length; mi++) {
     const m = mountains[mi];
 
-    // 層ごとの色（奥は暗く淡く、手前は濃い）
+    // 奥の層は半透明で空が透ける、手前は濃い
+    const opacity = [0.4, 0.55, 0.75, 0.9][mi];
     const depthFade = [0.15, 0.25, 0.4, 0.6][mi];
     const baseBright = brightness * depthFade;
     const r = Math.max(12, baseBright * 0.5 + 15) | 0;
     const g = Math.max(15, baseBright * 0.55 + 20) | 0;
     const b = Math.max(22, baseBright * 0.7 + 30) | 0;
 
-    // 山本体
+    ctx.globalAlpha = opacity;
     ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
     drawMountainPath(m);
     ctx.fill();
 
-    // 山頂の雪ハイライト（グラデーションで下に向かって透明に）
+    // 山頂の雪ハイライト
     const snowAlpha = (0.06 + mi * 0.03 + brightness / 500) * depthFade;
     const snowGrad = ctx.createLinearGradient(0, GROUND_Y - 90, 0, GROUND_Y - 15);
     snowGrad.addColorStop(0, `rgba(230, 240, 255, ${snowAlpha})`);
@@ -949,6 +894,7 @@ function drawMountains() {
     ctx.fillStyle = snowGrad;
     drawMountainPath(m);
     ctx.fill();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1096,7 +1042,9 @@ function drawBlizzard() {
 function drawBackground() {
   drawSky();
   drawAurora();
-  drawMountains();
+  drawSunBehind();    // 山の裏からにじむ広い光芒
+  drawMountains();    // 山（奥は半透明、光が透ける）
+  drawSunFront();     // 山の手前に太陽のにじみ
   drawBgAnimals();
   drawGround();
   drawSnowflakes();
@@ -1111,8 +1059,8 @@ function drawBackground() {
 // UI描画
 // ============================================================
 function drawUI() {
-  ctx.fillStyle = 'rgba(10, 20, 40, 0.4)';
-  ctx.fillRect(0, 0, CANVAS_W, 65);
+  ctx.fillStyle = 'rgba(10, 20, 40, 0.25)';
+  ctx.fillRect(0, 0, CANVAS_W, 60);
 
   const sky = getSkyColors();
   ctx.font = '16px "Segoe UI", sans-serif';
@@ -1142,7 +1090,7 @@ function drawUI() {
   ctx.font = '12px "Segoe UI", sans-serif';
   ctx.fillStyle = `rgba(180, 210, 240, 0.6)`;
   ctx.textAlign = 'left';
-  ctx.fillText(`${sky.phaseName}  ${PENGUIN_NAMES[currentSpecies]}`, 20, 48);
+  ctx.fillText(sky.phaseName, 20, 48);
 
   if (accelTimer > 0) {
     ctx.fillStyle = '#f39c12';
@@ -1182,10 +1130,7 @@ function drawTitle() {
     ctx.fill();
   }
 
-  // 3種類のペンギンを並べて表示
-  drawPenguin(CANVAS_W / 2 - 60, 180, 28, 34, 'chinstrap');
-  drawPenguin(CANVAS_W / 2 - 14, 178, 30, 36, 'gentoo');
-  drawPenguin(CANVAS_W / 2 + 32, 180, 28, 34, 'adelie');
+  drawPenguin(CANVAS_W / 2 - 16, 178, 32, 38);
 
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 44px "Segoe UI", sans-serif';
@@ -1289,8 +1234,6 @@ function drawGameOver() {
 // ゲーム制御
 // ============================================================
 function resetGame() {
-  // ランダムにペンギン種別を選択
-  currentSpecies = PENGUIN_SPECIES[Math.floor(Math.random() * PENGUIN_SPECIES.length)];
   player.y = GROUND_Y - PLAYER_H;
   player.vy = 0;
   player.onGround = true;
