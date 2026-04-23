@@ -79,7 +79,7 @@ function lerpColor(c1, c2, t) {
 // ゲーム状態
 // ============================================================
 let state = 'title';       // title | modeSelect | playing | gameover
-let gameMode = 'adventure'; // adventure | zen
+let gameMode = 'adventure'; // adventure | zen | cyber
 let score = 0;
 let highScore = 0;
 let distance = 0;          // ZENモード用（メートル）
@@ -91,7 +91,13 @@ let spawnTimer = 0;
 let safeZoneTimer = 0;
 const MIN_REACTION_FRAMES = 30;
 let titleAnimFrame = 0;
-let selectedMode = 0;      // 0=adventure, 1=zen
+let selectedMode = 0;      // 0=adventure, 1=zen, 2=cyber
+
+// サイバーモード用
+let cyberGrid = 0;        // グリッドスクロール
+let dataStreams = [];
+let glitchTimer = 0;
+let scanLine = 0;
 
 // 背景要素
 let snowflakes = [];
@@ -1039,12 +1045,238 @@ function drawBlizzard() {
   }
 }
 
+// ============================================================
+// サイバーモード描画
+// ============================================================
+function initDataStreams() {
+  dataStreams = [];
+  for (let i = 0; i < 12; i++) {
+    dataStreams.push({
+      x: rand(0, CANVAS_W), speed: rand(1, 4),
+      chars: Array.from({ length: randInt(5, 15) }, () => String.fromCharCode(randInt(0x30A0, 0x30FF))),
+      offset: rand(0, 300), alpha: rand(0.05, 0.2),
+    });
+  }
+}
+
+function drawCyberBackground() {
+  // 真っ黒な空間
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // データストリーム（マトリックス風の縦文字列）
+  ctx.font = '12px monospace';
+  for (const ds of dataStreams) {
+    ds.offset += ds.speed * 0.3;
+    for (let j = 0; j < ds.chars.length; j++) {
+      const cy = ((ds.offset + j * 18) % (GROUND_Y + 40)) - 20;
+      const isHead = j === Math.floor(ds.offset / 18) % ds.chars.length;
+      ctx.fillStyle = isHead ? `rgba(0, 255, 200, ${ds.alpha * 2.5})` : `rgba(0, 200, 160, ${ds.alpha})`;
+      ctx.textAlign = 'left';
+      ctx.fillText(ds.chars[j], ds.x, cy);
+    }
+    // 文字をたまに変更
+    if (Math.random() < 0.02) {
+      ds.chars[randInt(0, ds.chars.length - 1)] = String.fromCharCode(randInt(0x30A0, 0x30FF));
+    }
+  }
+
+  // パースペクティブグリッド（地面）
+  cyberGrid += gameSpeed * 0.5;
+  const gridSpacing = 40;
+  const gridOffset = cyberGrid % gridSpacing;
+
+  // 地面ベース
+  ctx.fillStyle = '#0a0a18';
+  ctx.fillRect(0, GROUND_Y, CANVAS_W, CANVAS_H - GROUND_Y);
+
+  // 横線（奥行き感）
+  for (let i = 0; i < 8; i++) {
+    const gy = GROUND_Y + 4 + i * 8;
+    const alpha = 0.15 - i * 0.015;
+    ctx.strokeStyle = `rgba(0, 220, 255, ${Math.max(0.02, alpha)})`;
+    ctx.lineWidth = i === 0 ? 1.5 : 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, gy);
+    ctx.lineTo(CANVAS_W, gy);
+    ctx.stroke();
+  }
+
+  // 縦線（スクロール）
+  ctx.strokeStyle = 'rgba(0, 180, 255, 0.1)';
+  ctx.lineWidth = 0.5;
+  for (let x = -gridOffset; x < CANVAS_W; x += gridSpacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_Y);
+    ctx.lineTo(x, CANVAS_H);
+    ctx.stroke();
+  }
+
+  // 地平線のグロー
+  const horizGlow = ctx.createLinearGradient(0, GROUND_Y - 15, 0, GROUND_Y + 5);
+  horizGlow.addColorStop(0, 'rgba(0, 200, 255, 0)');
+  horizGlow.addColorStop(0.5, 'rgba(0, 200, 255, 0.08)');
+  horizGlow.addColorStop(1, 'rgba(0, 200, 255, 0)');
+  ctx.fillStyle = horizGlow;
+  ctx.fillRect(0, GROUND_Y - 15, CANVAS_W, 20);
+
+  // スキャンライン
+  scanLine = (scanLine + 1.5) % CANVAS_H;
+  ctx.fillStyle = 'rgba(0, 255, 200, 0.03)';
+  ctx.fillRect(0, scanLine, CANVAS_W, 2);
+
+  // ランダムグリッチ
+  if (glitchTimer > 0) {
+    glitchTimer--;
+    const gy = rand(0, CANVAS_H - 20);
+    const gh = rand(2, 8);
+    ctx.fillStyle = `rgba(255, 0, 100, ${rand(0.05, 0.15)})`;
+    ctx.fillRect(0, gy, CANVAS_W, gh);
+    // RGBずれ
+    ctx.fillStyle = `rgba(0, 255, 200, ${rand(0.03, 0.08)})`;
+    ctx.fillRect(rand(-5, 5), gy + rand(-2, 2), CANVAS_W, 1);
+  } else if (Math.random() < 0.005) {
+    glitchTimer = randInt(3, 12);
+  }
+
+  // 加速中エフェクト
+  if (accelTimer > 0) {
+    ctx.fillStyle = `rgba(255, 0, 200, 0.04)`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
+}
+
+function drawCyberObstacles() {
+  for (const o of obstacles) {
+    // ファイアウォール（ネオン矩形）
+    ctx.strokeStyle = `rgba(255, 0, 80, ${0.7 + Math.sin(frameCount * 0.1) * 0.3})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(o.x, o.y, o.w, o.h);
+    // 内側のグロー
+    ctx.fillStyle = 'rgba(255, 0, 60, 0.08)';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    // 横線パターン
+    ctx.strokeStyle = 'rgba(255, 0, 80, 0.15)';
+    ctx.lineWidth = 0.5;
+    for (let sy = o.y + 4; sy < o.y + o.h; sy += 6) {
+      ctx.beginPath();
+      ctx.moveTo(o.x, sy);
+      ctx.lineTo(o.x + o.w, sy);
+      ctx.stroke();
+    }
+    // 警告アイコン
+    ctx.fillStyle = `rgba(255, 60, 80, ${0.5 + Math.sin(frameCount * 0.15) * 0.3})`;
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ERR', o.x + o.w / 2, o.y - 4);
+  }
+}
+
+function drawCyberAccelerators() {
+  for (const a of accelerators) {
+    const cx = a.x + a.w / 2;
+    const cy = a.y + a.h / 2;
+    const pulse = Math.sin(frameCount * 0.12 + a.wobble) * 0.3 + 0.7;
+    // データパケット（回転する菱形）
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(frameCount * 0.03);
+    ctx.strokeStyle = `rgba(0, 255, 200, ${pulse})`;
+    ctx.lineWidth = 1.5;
+    const s = a.w * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(0, -s); ctx.lineTo(s, 0); ctx.lineTo(0, s); ctx.lineTo(-s, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fillStyle = `rgba(0, 255, 200, ${pulse * 0.15})`;
+    ctx.fill();
+    // 内側の小さい菱形
+    ctx.strokeStyle = `rgba(0, 255, 255, ${pulse * 0.5})`;
+    ctx.lineWidth = 1;
+    const s2 = s * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -s2); ctx.lineTo(s2, 0); ctx.lineTo(0, s2); ctx.lineTo(-s2, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawCyberPlayer() {
+  // ネオンアウトラインのペンギン
+  drawPenguin(player.x, player.y, player.w, player.h);
+  // シアンのグロー
+  ctx.strokeStyle = `rgba(0, 220, 255, ${0.4 + Math.sin(frameCount * 0.1) * 0.2})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(player.x + player.w / 2, player.y + player.h * 0.5, player.w * 0.5 + 2, player.h * 0.52 + 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 二段ジャンプインジケーター（サイバー版）
+  if (!player.onGround && player.jumpCount < player.maxJumps) {
+    const alpha = 0.5 + Math.sin(frameCount * 0.3) * 0.3;
+    ctx.strokeStyle = `rgba(0, 255, 200, ${alpha})`;
+    ctx.lineWidth = 1;
+    const ix = player.x + player.w / 2, iy = player.y + player.h + 6;
+    ctx.beginPath();
+    ctx.moveTo(ix - 5, iy); ctx.lineTo(ix, iy + 5); ctx.lineTo(ix + 5, iy);
+    ctx.stroke();
+  }
+
+  // 加速エフェクト（サイバー版）
+  if (accelTimer > 0) {
+    for (let i = 0; i < 3; i++) {
+      const px = player.x - rand(8, 30);
+      const py = player.y + rand(5, player.h - 5);
+      ctx.fillStyle = `rgba(255, 0, 200, ${rand(0.3, 0.6)})`;
+      ctx.fillRect(px, py, rand(8, 20), 1);
+    }
+  }
+}
+
+function drawCyberUI() {
+  // UIバー
+  ctx.fillStyle = 'rgba(0, 10, 20, 0.6)';
+  ctx.fillRect(0, 0, CANVAS_W, 55);
+  ctx.strokeStyle = 'rgba(0, 200, 255, 0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 55); ctx.lineTo(CANVAS_W, 55); ctx.stroke();
+
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#0f0';
+  ctx.fillText(`SCORE:${Math.floor(score).toString().padStart(8, '0')}`, CANVAS_W - 15, 24);
+  ctx.fillStyle = '#0a8';
+  ctx.fillText(`HI:${Math.floor(highScore).toString().padStart(8, '0')}`, CANVAS_W - 15, 44);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#0cf';
+  ctx.fillText(`SPD:${gameSpeed.toFixed(1)}`, 15, 24);
+  ctx.fillStyle = '#08a';
+  ctx.font = '11px monospace';
+  ctx.fillText('MODE:CYBER', 15, 44);
+
+  if (accelTimer > 0) {
+    ctx.fillStyle = '#f0a';
+    ctx.font = '13px monospace';
+    ctx.fillText(`>>BOOST x${scoreMultiplier}`, 140, 44);
+    ctx.fillStyle = 'rgba(40,40,40,0.5)';
+    ctx.fillRect(140, 48, 70, 3);
+    ctx.fillStyle = '#f0a';
+    ctx.fillRect(140, 48, 70 * (accelTimer / ACCEL_DURATION), 3);
+  }
+}
+
 function drawBackground() {
+  if (gameMode === 'cyber') {
+    drawCyberBackground();
+    return;
+  }
   drawSky();
   drawAurora();
-  drawSunBehind();    // 山の裏からにじむ広い光芒
-  drawMountains();    // 山（奥は半透明、光が透ける）
-  drawSunFront();     // 山の手前に太陽のにじみ
+  drawSunBehind();
+  drawMountains();
+  drawSunFront();
   drawBgAnimals();
   drawGround();
   drawSnowflakes();
@@ -1164,40 +1396,42 @@ function drawModeSelect() {
   drawTitle();
 
   // モード選択UI
-  ctx.fillStyle = 'rgba(5, 15, 35, 0.6)';
-  ctx.fillRect(0, 230, CANVAS_W, 160);
+  ctx.fillStyle = 'rgba(5, 15, 35, 0.7)';
+  ctx.fillRect(0, 228, CANVAS_W, 170);
 
   const modes = [
-    { label: 'ADVENTURE', desc: '障害物を避けてスコアを稼ぐ', icon: '⚡' },
-    { label: 'ZEN', desc: '南極の風景を楽しむ散歩モード', icon: '❄' },
+    { label: 'ADVENTURE', desc: '障害物を避けてスコアを稼ぐ', color: '#4fc3f7' },
+    { label: 'ZEN', desc: '南極の風景を楽しむ散歩モード', color: '#80cbc4' },
+    { label: 'CYBER', desc: 'サイバー空間を駆け抜ける', color: '#e040fb' },
   ];
 
   for (let i = 0; i < modes.length; i++) {
-    const y = 265 + i * 55;
+    const y = 258 + i * 42;
     const isSelected = selectedMode === i;
+    const mc = modes[i].color;
 
     if (isSelected) {
-      ctx.fillStyle = 'rgba(100, 180, 240, 0.15)';
-      ctx.fillRect(CANVAS_W / 2 - 180, y - 18, 360, 44);
-      ctx.strokeStyle = 'rgba(100, 180, 240, 0.5)';
+      ctx.fillStyle = `${mc}18`;
+      ctx.fillRect(CANVAS_W / 2 - 180, y - 16, 360, 36);
+      ctx.strokeStyle = `${mc}80`;
       ctx.lineWidth = 1;
-      ctx.strokeRect(CANVAS_W / 2 - 180, y - 18, 360, 44);
+      ctx.strokeRect(CANVAS_W / 2 - 180, y - 16, 360, 36);
     }
 
     ctx.textAlign = 'center';
-    ctx.font = `bold 20px "Segoe UI", sans-serif`;
-    ctx.fillStyle = isSelected ? '#e0f0ff' : '#6a8aaa';
-    ctx.fillText(`${modes[i].icon}  ${modes[i].label}`, CANVAS_W / 2, y + 5);
+    ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    ctx.fillStyle = isSelected ? mc : '#5a7a95';
+    ctx.fillText(modes[i].label, CANVAS_W / 2, y + 4);
 
-    ctx.font = '12px "Segoe UI", sans-serif';
-    ctx.fillStyle = isSelected ? '#8ab8d8' : '#4a6a85';
-    ctx.fillText(modes[i].desc, CANVAS_W / 2, y + 22);
+    ctx.font = '11px "Segoe UI", sans-serif';
+    ctx.fillStyle = isSelected ? '#9ab8d0' : '#3a5a70';
+    ctx.fillText(modes[i].desc, CANVAS_W / 2, y + 18);
   }
 
-  ctx.font = '13px "Segoe UI", sans-serif';
-  ctx.fillStyle = '#6a8aaa';
+  ctx.font = '12px "Segoe UI", sans-serif';
+  ctx.fillStyle = '#5a7a95';
   ctx.textAlign = 'center';
-  ctx.fillText('↑↓ で選択　スペース/タップ で決定', CANVAS_W / 2, 385);
+  ctx.fillText('↑↓ で選択　スペース/タップ で決定', CANVAS_W / 2, 392);
 }
 
 function drawGameOver() {
@@ -1254,7 +1488,9 @@ function resetGame() {
   crystalTimer = randInt(60, 180);
 
   if (gameMode === 'zen') {
-    gameSpeed = 3.5; // ゆったり
+    gameSpeed = 3.5;
+  } else if (gameMode === 'cyber') {
+    gameSpeed = 6;  // やや速め
   } else {
     gameSpeed = BASE_SPEED;
   }
@@ -1264,6 +1500,8 @@ function resetGame() {
   initGroundMarks();
   initAuroraWaves();
   initBgAnimals();
+  initDataStreams();
+  cyberGrid = 0; glitchTimer = 0; scanLine = 0;
 }
 
 function update() {
@@ -1278,13 +1516,15 @@ function update() {
   updateBackground();
   updateAudio();
 
-  if (gameMode === 'adventure') {
-    if (gameSpeed < MAX_SPEED) gameSpeed += SPEED_INCREMENT;
+  if (gameMode === 'adventure' || gameMode === 'cyber') {
+    const baseSpd = gameMode === 'cyber' ? 6 : BASE_SPEED;
+    const increment = gameMode === 'cyber' ? 0.0015 : SPEED_INCREMENT;
+    if (gameSpeed < MAX_SPEED) gameSpeed += increment;
 
     if (accelTimer > 0) {
       accelTimer--;
       if (accelTimer <= 0) {
-        gameSpeed = Math.max(BASE_SPEED, gameSpeed - ACCEL_BOOST);
+        gameSpeed = Math.max(baseSpd, gameSpeed - ACCEL_BOOST);
         scoreMultiplier = 1;
       }
     }
@@ -1315,7 +1555,7 @@ function update() {
       safeZoneTimer = 90;
       playCollectSound();
     }
-    score += 0.1 * (gameSpeed / BASE_SPEED) * scoreMultiplier;
+    score += 0.1 * (gameSpeed / baseSpd) * scoreMultiplier;
 
   } else {
     // ZENモード
@@ -1342,10 +1582,17 @@ function draw() {
   if (state === 'title') { drawTitle(); return; }
   if (state === 'modeSelect') { drawModeSelect(); return; }
   drawBackground();
-  if (gameMode === 'adventure') drawObstacles();
-  drawAccelerators();
-  playerDraw();
-  drawUI();
+  if (gameMode === 'cyber') {
+    drawCyberObstacles();
+    drawCyberAccelerators();
+    drawCyberPlayer();
+    drawCyberUI();
+  } else {
+    if (gameMode === 'adventure') drawObstacles();
+    drawAccelerators();
+    playerDraw();
+    drawUI();
+  }
   if (state === 'gameover') drawGameOver();
 }
 
@@ -1363,7 +1610,7 @@ function handleAction() {
   if (state === 'title') {
     state = 'modeSelect';
   } else if (state === 'modeSelect') {
-    gameMode = selectedMode === 0 ? 'adventure' : 'zen';
+    gameMode = ['adventure', 'zen', 'cyber'][selectedMode];
     resetGame();
     state = 'playing';
   } else if (state === 'playing') {
@@ -1375,7 +1622,7 @@ function handleAction() {
 
 function handleModeSwitch(dir) {
   if (state === 'modeSelect') {
-    selectedMode = (selectedMode + dir + 2) % 2;
+    selectedMode = (selectedMode + dir + 3) % 3;
   }
 }
 
@@ -1391,7 +1638,7 @@ canvas.addEventListener('touchstart', (e) => {
   if (state === 'modeSelect') {
     const rect = canvas.getBoundingClientRect();
     const y = (e.touches[0].clientY - rect.top) / rect.height;
-    selectedMode = y > 0.5 ? 1 : 0;
+    selectedMode = y > 0.75 ? 2 : y > 0.55 ? 1 : 0;
   }
   handleAction();
 }, { passive: false });
@@ -1400,7 +1647,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (state === 'modeSelect') {
     const rect = canvas.getBoundingClientRect();
     const y = (e.clientY - rect.top) / rect.height;
-    selectedMode = y > 0.6 ? 1 : 0;
+    selectedMode = y > 0.75 ? 2 : y > 0.55 ? 1 : 0;
   }
   handleAction();
 });
