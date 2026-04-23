@@ -93,10 +93,13 @@ let safeZoneTimer = 0;
 const MIN_REACTION_FRAMES = 30;
 
 // 背景要素
-let snowflakes = [];
+let snowflakes = [];    // 3層の雪
 let groundMarks = [];
 let mountains = [];
 let auroraWaves = [];
+let windOffset = 0;     // 全体の風の揺らぎ
+let windTarget = 0;
+let windCurrent = 0;
 
 // 舞台演出
 let stageMode = 'clear';  // clear | blizzard | aurora
@@ -399,14 +402,46 @@ function checkCollisions() {
 // ============================================================
 function initSnowflakes() {
   snowflakes = [];
-  for (let i = 0; i < 60; i++) {
+  // Layer 0: 遠景（小さく、ぼんやり、ゆっくり）
+  for (let i = 0; i < 40; i++) {
     snowflakes.push({
-      x: rand(0, CANVAS_W),
-      y: rand(0, GROUND_Y),
-      size: rand(1, 3),
-      speedX: rand(0.2, 1),
-      speedY: rand(0.3, 1.2),
-      sway: rand(0, Math.PI * 2),
+      x: rand(0, CANVAS_W), y: rand(-20, GROUND_Y),
+      size: rand(0.8, 1.5), layer: 0,
+      speedX: rand(0.1, 0.4), speedY: rand(0.15, 0.5),
+      sway1: rand(0, Math.PI * 2), sway2: rand(0, Math.PI * 2),
+      swaySpeed1: rand(0.008, 0.02), swaySpeed2: rand(0.003, 0.008),
+      swayAmp1: rand(0.2, 0.6), swayAmp2: rand(0.5, 1.5),
+      alpha: rand(0.12, 0.25), sparkle: false,
+      rotation: rand(0, Math.PI * 2), rotSpeed: rand(-0.005, 0.005),
+    });
+  }
+  // Layer 1: 中景（標準サイズ、一部が結晶型）
+  for (let i = 0; i < 35; i++) {
+    const isCrystal = Math.random() < 0.15;
+    snowflakes.push({
+      x: rand(0, CANVAS_W), y: rand(-30, GROUND_Y),
+      size: rand(1.5, 3), layer: 1,
+      speedX: rand(0.2, 0.7), speedY: rand(0.3, 0.8),
+      sway1: rand(0, Math.PI * 2), sway2: rand(0, Math.PI * 2),
+      swaySpeed1: rand(0.012, 0.025), swaySpeed2: rand(0.005, 0.012),
+      swayAmp1: rand(0.3, 0.8), swayAmp2: rand(0.8, 2.0),
+      alpha: rand(0.2, 0.45), sparkle: Math.random() < 0.2,
+      crystal: isCrystal,
+      rotation: rand(0, Math.PI * 2), rotSpeed: rand(-0.01, 0.01),
+    });
+  }
+  // Layer 2: 手前（大きく、明るく、被写界深度ボケ風）
+  for (let i = 0; i < 15; i++) {
+    snowflakes.push({
+      x: rand(0, CANVAS_W), y: rand(-50, GROUND_Y),
+      size: rand(3, 6), layer: 2,
+      speedX: rand(0.5, 1.2), speedY: rand(0.5, 1.0),
+      sway1: rand(0, Math.PI * 2), sway2: rand(0, Math.PI * 2),
+      swaySpeed1: rand(0.015, 0.03), swaySpeed2: rand(0.006, 0.015),
+      swayAmp1: rand(0.5, 1.2), swayAmp2: rand(1.0, 3.0),
+      alpha: rand(0.08, 0.18), sparkle: false,
+      crystal: false,
+      rotation: rand(0, Math.PI * 2), rotSpeed: rand(-0.015, 0.015),
     });
   }
 }
@@ -487,14 +522,39 @@ function updateStage() {
 }
 
 function updateBackground() {
-  // 雪
+  // 風のうねり（ゆっくり変化）
+  if (Math.random() < 0.005) windTarget = rand(-1.5, 1.5);
+  windCurrent += (windTarget - windCurrent) * 0.01;
+  windOffset = windCurrent;
+
+  // 雪の更新（3層）
   for (const s of snowflakes) {
-    s.x -= s.speedX * (gameSpeed / BASE_SPEED);
+    // 層ごとのスクロール速度
+    const layerScrollMul = [0.3, 0.7, 1.2][s.layer];
+    s.x -= s.speedX * (gameSpeed / BASE_SPEED) * layerScrollMul;
+
+    // 自然な落下
     s.y += s.speedY;
-    s.sway += 0.02;
-    s.x += Math.sin(s.sway) * 0.3;
-    if (s.y > GROUND_Y) { s.y = -5; s.x = rand(0, CANVAS_W); }
-    if (s.x < -5) { s.x = CANVAS_W + 5; }
+
+    // 二重sin波による有機的な揺らぎ
+    s.sway1 += s.swaySpeed1;
+    s.sway2 += s.swaySpeed2;
+    const sway = Math.sin(s.sway1) * s.swayAmp1 + Math.sin(s.sway2) * s.swayAmp2;
+    s.x += sway * 0.15;
+
+    // 全体の風の影響（手前ほど強い）
+    s.x += windOffset * (0.3 + s.layer * 0.4);
+
+    // 回転
+    s.rotation += s.rotSpeed;
+
+    // リサイクル
+    if (s.y > GROUND_Y + 5) {
+      s.y = rand(-30, -5);
+      s.x = rand(-20, CANVAS_W + 20);
+    }
+    if (s.x < -30) s.x = CANVAS_W + rand(5, 30);
+    if (s.x > CANVAS_W + 30) s.x = rand(-30, -5);
   }
   // 山のパララックス
   for (const m of mountains) {
@@ -601,13 +661,83 @@ function drawGround() {
   ctx.stroke();
 }
 
-function drawSnowflakes() {
-  for (const s of snowflakes) {
-    const alpha = 0.3 + Math.sin(frameCount * 0.02 + s.sway) * 0.2;
-    ctx.fillStyle = `rgba(230, 240, 255, ${alpha})`;
+function drawSnowCrystal(x, y, size, rotation, alpha) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.strokeStyle = `rgba(210, 235, 255, ${alpha})`;
+  ctx.lineWidth = 0.8;
+  // 六角形の結晶
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i;
+    const ex = Math.cos(angle) * size;
+    const ey = Math.sin(angle) * size;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    // 枝の先に小さなV
+    if (size > 2.5) {
+      const bLen = size * 0.35;
+      const bAngle1 = angle + 0.5;
+      const bAngle2 = angle - 0.5;
+      const bx = ex * 0.65;
+      const by = ey * 0.65;
+      ctx.beginPath();
+      ctx.moveTo(bx + Math.cos(bAngle1) * bLen, by + Math.sin(bAngle1) * bLen);
+      ctx.lineTo(bx, by);
+      ctx.lineTo(bx + Math.cos(bAngle2) * bLen, by + Math.sin(bAngle2) * bLen);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawSnowflakes() {
+  // Layer 0 から描画（奥から手前へ）
+  for (let layer = 0; layer <= 2; layer++) {
+    for (const s of snowflakes) {
+      if (s.layer !== layer) continue;
+
+      // アルファの揺らぎ（キラキラ感）
+      let alpha = s.alpha + Math.sin(frameCount * 0.02 + s.sway1 * 10) * 0.08;
+
+      // スパークル（一瞬明るく光る）
+      if (s.sparkle) {
+        const sparkPhase = Math.sin(frameCount * 0.05 + s.sway2 * 20);
+        if (sparkPhase > 0.92) {
+          alpha = Math.min(0.9, alpha + 0.5);
+          // 光芒
+          ctx.strokeStyle = `rgba(255, 255, 240, ${alpha * 0.4})`;
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(s.x - s.size * 2, s.y);
+          ctx.lineTo(s.x + s.size * 2, s.y);
+          ctx.moveTo(s.x, s.y - s.size * 2);
+          ctx.lineTo(s.x, s.y + s.size * 2);
+          ctx.stroke();
+        }
+      }
+
+      if (s.crystal) {
+        // 結晶型
+        drawSnowCrystal(s.x, s.y, s.size * 1.8, s.rotation, alpha);
+      } else if (layer === 2) {
+        // 手前レイヤー：大きくソフトなボケ
+        const gradient = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size);
+        gradient.addColorStop(0, `rgba(220, 240, 255, ${alpha})`);
+        gradient.addColorStop(0.5, `rgba(220, 240, 255, ${alpha * 0.4})`);
+        gradient.addColorStop(1, `rgba(220, 240, 255, 0)`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(s.x - s.size, s.y - s.size, s.size * 2, s.size * 2);
+      } else {
+        // 通常の丸い雪
+        ctx.fillStyle = `rgba(225, 238, 255, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 }
 
@@ -784,6 +914,7 @@ function resetGame() {
   stageTimer = 0;
   stageMode = 'clear';
   blizzardParticles = [];
+  windOffset = 0; windTarget = 0; windCurrent = 0;
   spawnTimer = randInt(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX);
   initSnowflakes();
   initMountains();
