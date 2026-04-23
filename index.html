@@ -600,13 +600,20 @@ function initSnowflakes() {
 
 function initMountains() {
   mountains = [];
-  for (let layer = 0; layer < 3; layer++) {
-    const peaks = [];
-    const numPeaks = 5 + layer * 2;
-    for (let i = 0; i < numPeaks; i++) {
-      peaks.push({ x: (CANVAS_W / (numPeaks - 1)) * i, h: rand(40, 90) - layer * 15 });
+  // 4層: 遠景ほどなだらかで低い、手前ほど高くディテール多め
+  for (let layer = 0; layer < 4; layer++) {
+    const points = [];
+    const numPoints = 12 + layer * 4;
+    const baseH = [55, 45, 30, 18][layer];     // 層ごとの基本高さ
+    const variation = [35, 28, 20, 12][layer];  // 高さのブレ幅
+    const totalWidth = CANVAS_W + 200;          // ループ用に幅を広めに
+    for (let i = 0; i <= numPoints; i++) {
+      points.push({
+        x: (totalWidth / numPoints) * i,
+        h: baseH + rand(-variation, variation),
+      });
     }
-    mountains.push({ peaks, layer, offset: 0 });
+    mountains.push({ points, layer, offset: 0, totalWidth });
   }
 }
 
@@ -674,8 +681,8 @@ function updateBackground() {
     if (s.x > CANVAS_W + 30) s.x = rand(-30, -5);
   }
 
-  // 山
-  for (const m of mountains) m.offset -= gameSpeed * (0.1 + m.layer * 0.1);
+  // 山（遠景ほど遅い）
+  for (const m of mountains) m.offset -= gameSpeed * (0.05 + m.layer * 0.08);
   // 地面
   for (const g of groundMarks) {
     g.x -= g.speed * gameSpeed;
@@ -793,31 +800,66 @@ function drawAurora() {
   }
 }
 
+function drawMountainPath(m) {
+  // スムーズな稜線をquadraticCurveToで描画
+  const pts = m.points;
+  const tw = m.totalWidth;
+
+  ctx.beginPath();
+  ctx.moveTo(-10, GROUND_Y);
+
+  // 最初のポイントへ
+  const firstX = ((pts[0].x + m.offset) % tw + tw) % tw - 100;
+  ctx.lineTo(firstX, GROUND_Y - pts[0].h);
+
+  // スムーズカーブ: 隣接する2点の中点をアンカーにして滑らかに
+  for (let i = 0; i < pts.length - 1; i++) {
+    const cx = ((pts[i].x + m.offset) % tw + tw) % tw - 100;
+    const cy = GROUND_Y - pts[i].h;
+    const nx = ((pts[i + 1].x + m.offset) % tw + tw) % tw - 100;
+    const ny = GROUND_Y - pts[i + 1].h;
+    // 中点をカーブの到達点に、現在点をコントロールポイントに
+    const midX = (cx + nx) / 2;
+    const midY = (cy + ny) / 2;
+    ctx.quadraticCurveTo(cx, cy, midX, midY);
+  }
+
+  // 最後のポイント
+  const lastIdx = pts.length - 1;
+  const lastX = ((pts[lastIdx].x + m.offset) % tw + tw) % tw - 100;
+  ctx.lineTo(lastX, GROUND_Y - pts[lastIdx].h);
+
+  ctx.lineTo(CANVAS_W + 10, GROUND_Y);
+  ctx.closePath();
+}
+
 function drawMountains() {
   const sky = getSkyColors();
   const brightness = (sky.bot[0] + sky.bot[1] + sky.bot[2]) / 3;
-  for (let mi = mountains.length - 1; mi >= 0; mi--) {
+
+  // 奥のレイヤーから順に描画
+  for (let mi = 0; mi < mountains.length; mi++) {
     const m = mountains[mi];
-    const b = Math.max(15, brightness * 0.3 + m.layer * 12);
-    ctx.fillStyle = `rgb(${b + 15|0}, ${b + 22|0}, ${b + 35|0})`;
-    ctx.beginPath();
-    ctx.moveTo(0, GROUND_Y);
-    for (const p of m.peaks) {
-      ctx.lineTo(((p.x + m.offset) % (CANVAS_W + 100)) - 50, GROUND_Y - p.h);
-    }
-    ctx.lineTo(CANVAS_W, GROUND_Y);
-    ctx.closePath();
+
+    // 層ごとの色（奥は暗く淡く、手前は濃い）
+    const depthFade = [0.15, 0.25, 0.4, 0.6][mi];
+    const baseBright = brightness * depthFade;
+    const r = Math.max(12, baseBright * 0.5 + 15) | 0;
+    const g = Math.max(15, baseBright * 0.55 + 20) | 0;
+    const b = Math.max(22, baseBright * 0.7 + 30) | 0;
+
+    // 山本体
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+    drawMountainPath(m);
     ctx.fill();
-    // 山頂の雪（白夜時は明るく）
-    const snowAlpha = 0.1 + m.layer * 0.06 + (brightness / 400);
-    ctx.fillStyle = `rgba(220, 235, 250, ${snowAlpha})`;
-    ctx.beginPath();
-    ctx.moveTo(0, GROUND_Y);
-    for (const p of m.peaks) {
-      ctx.lineTo(((p.x + m.offset) % (CANVAS_W + 100)) - 50, GROUND_Y - p.h);
-    }
-    ctx.lineTo(CANVAS_W, GROUND_Y);
-    ctx.closePath();
+
+    // 山頂の雪ハイライト（グラデーションで下に向かって透明に）
+    const snowAlpha = (0.06 + mi * 0.03 + brightness / 500) * depthFade;
+    const snowGrad = ctx.createLinearGradient(0, GROUND_Y - 90, 0, GROUND_Y - 15);
+    snowGrad.addColorStop(0, `rgba(230, 240, 255, ${snowAlpha})`);
+    snowGrad.addColorStop(1, 'rgba(230, 240, 255, 0)');
+    ctx.fillStyle = snowGrad;
+    drawMountainPath(m);
     ctx.fill();
   }
 }
