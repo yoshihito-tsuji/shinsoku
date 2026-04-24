@@ -1048,16 +1048,86 @@ function drawBlizzard() {
 // ============================================================
 // サイバーモード描画
 // ============================================================
-const MATRIX_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<>/\\{}[]()!@#$%&*+=?';
-function randMatrixChar() { return MATRIX_CHARS[randInt(0, MATRIX_CHARS.length - 1)]; }
+// バイナリ中心、たまにhexや文字
+function randMatrixChar() {
+  const r = Math.random();
+  if (r < 0.75) return Math.random() < 0.5 ? '0' : '1';
+  if (r < 0.9) return '0123456789ABCDEF'[randInt(0, 15)];
+  return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ<>/\\{}[]()'[randInt(0, 35)];
+}
+
+// 回路トレース/ノード/スパークル
+let circuitTraces = [];
+let circuitNodes = [];
+let hexagons = [];
+let motionDashes = [];
 
 function initDataStreams() {
   dataStreams = [];
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 18; i++) {
     dataStreams.push({
       x: rand(0, CANVAS_W), speed: rand(1, 4),
       chars: Array.from({ length: randInt(6, 18) }, randMatrixChar),
       offset: rand(0, 300), alpha: rand(0.05, 0.2),
+    });
+  }
+}
+
+function initCircuit() {
+  circuitTraces = [];
+  circuitNodes = [];
+  // L字型の回路トレース（コーナーで90度曲がる配線）
+  for (let i = 0; i < 20; i++) {
+    const startX = rand(0, CANVAS_W * 1.5);
+    const startY = rand(30, GROUND_Y - 30);
+    const segments = randInt(2, 5);
+    const path = [{ x: startX, y: startY }];
+    let cur = { x: startX, y: startY };
+    let lastDir = null;
+    for (let s = 0; s < segments; s++) {
+      // 90度のみ（縦または横）
+      const dirs = lastDir === 'h' ? ['v'] : lastDir === 'v' ? ['h'] : ['h', 'v'];
+      const dir = dirs[randInt(0, dirs.length - 1)];
+      const len = rand(20, 80);
+      const sign = Math.random() < 0.5 ? 1 : -1;
+      if (dir === 'h') cur = { x: cur.x + len * sign, y: cur.y };
+      else cur = { x: cur.x, y: cur.y + len * sign };
+      path.push({ ...cur });
+      lastDir = dir;
+    }
+    circuitTraces.push({
+      path, alpha: rand(0.15, 0.35), speed: rand(0.3, 0.8),
+      pulsePhase: rand(0, Math.PI * 2),
+    });
+    // 末端にノード（ジャンクション点）を置く
+    circuitNodes.push({
+      x: cur.x, y: cur.y, speed: circuitTraces[circuitTraces.length - 1].speed,
+      sparklePhase: rand(0, Math.PI * 2), sparkleInterval: rand(0.5, 2),
+      size: rand(1.5, 3),
+    });
+  }
+}
+
+function initHexagons() {
+  hexagons = [];
+  for (let i = 0; i < 6; i++) {
+    hexagons.push({
+      x: rand(0, CANVAS_W * 1.5), y: rand(50, GROUND_Y - 60),
+      size: rand(25, 60), speed: rand(0.4, 1),
+      alpha: rand(0.08, 0.2), rotation: rand(0, Math.PI / 3),
+    });
+  }
+}
+
+function initMotionDashes() {
+  motionDashes = [];
+  for (let i = 0; i < 40; i++) {
+    motionDashes.push({
+      x: rand(0, CANVAS_W * 0.5),
+      y: rand(20, GROUND_Y - 10),
+      w: rand(8, 30),
+      speed: rand(3, 9),
+      alpha: rand(0.1, 0.35),
     });
   }
 }
@@ -1081,6 +1151,123 @@ function drawCyberBackground() {
     // 文字をたまに変更
     if (Math.random() < 0.04) {
       ds.chars[randInt(0, ds.chars.length - 1)] = randMatrixChar();
+    }
+  }
+
+  // 六角形（背景、ゆっくりスクロール）
+  for (const hx of hexagons) {
+    hx.x -= hx.speed * (gameSpeed / BASE_SPEED);
+    if (hx.x + hx.size < -20) {
+      hx.x = CANVAS_W + rand(50, 200);
+      hx.y = rand(50, GROUND_Y - 60);
+      hx.size = rand(25, 60);
+      hx.alpha = rand(0.08, 0.2);
+    }
+    ctx.save();
+    ctx.translate(hx.x, hx.y);
+    ctx.rotate(hx.rotation);
+    ctx.strokeStyle = `rgba(180, 80, 255, ${hx.alpha})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (Math.PI / 3) * k;
+      const px = Math.cos(a) * hx.size;
+      const py = Math.sin(a) * hx.size;
+      if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    // 内側の小六角
+    ctx.strokeStyle = `rgba(180, 80, 255, ${hx.alpha * 0.5})`;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (Math.PI / 3) * k;
+      const px = Math.cos(a) * hx.size * 0.55;
+      const py = Math.sin(a) * hx.size * 0.55;
+      if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 回路トレース（L字の配線）
+  for (const tr of circuitTraces) {
+    // スクロール
+    for (const p of tr.path) p.x -= tr.speed * (gameSpeed / BASE_SPEED);
+    const rightMost = tr.path[tr.path.length - 1].x;
+    if (rightMost < -50) {
+      const shift = CANVAS_W + 100 - rightMost + rand(0, 200);
+      for (const p of tr.path) p.x += shift;
+    }
+    // パルス効果
+    tr.pulsePhase += 0.03;
+    const pulse = 0.7 + Math.sin(tr.pulsePhase) * 0.3;
+    ctx.strokeStyle = `rgba(0, 220, 255, ${tr.alpha * pulse})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < tr.path.length; i++) {
+      if (i === 0) ctx.moveTo(tr.path[i].x, tr.path[i].y);
+      else ctx.lineTo(tr.path[i].x, tr.path[i].y);
+    }
+    ctx.stroke();
+    // コーナーに小さなジャンクションドット
+    for (let i = 1; i < tr.path.length - 1; i++) {
+      ctx.fillStyle = `rgba(0, 255, 200, ${tr.alpha * 1.5 * pulse})`;
+      ctx.fillRect(tr.path[i].x - 1, tr.path[i].y - 1, 2, 2);
+    }
+  }
+
+  // 回路ノード（スパークル）
+  for (const n of circuitNodes) {
+    n.x -= n.speed * (gameSpeed / BASE_SPEED);
+    if (n.x < -30) n.x = CANVAS_W + rand(50, 300);
+    n.sparklePhase += 0.05;
+    const bright = Math.sin(n.sparklePhase * n.sparkleInterval);
+    if (bright > 0.3) {
+      const glow = (bright - 0.3) / 0.7;
+      ctx.fillStyle = `rgba(255, 255, 255, ${glow * 0.9})`;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.size, 0, Math.PI * 2);
+      ctx.fill();
+      // 十字光芒
+      ctx.strokeStyle = `rgba(200, 150, 255, ${glow * 0.6})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(n.x - n.size * 3, n.y); ctx.lineTo(n.x + n.size * 3, n.y);
+      ctx.moveTo(n.x, n.y - n.size * 3); ctx.lineTo(n.x, n.y + n.size * 3);
+      ctx.stroke();
+      // 外側のリング
+      ctx.strokeStyle = `rgba(255, 180, 255, ${glow * 0.3})`;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.size * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // モーションダッシュ（左側のスピードライン）
+  for (const md of motionDashes) {
+    md.x -= md.speed * (gameSpeed / BASE_SPEED);
+    if (md.x + md.w < 0) {
+      md.x = CANVAS_W * 0.5 + rand(0, CANVAS_W * 0.3);
+      md.y = rand(20, GROUND_Y - 10);
+      md.w = rand(8, 30);
+      md.speed = rand(3, 9);
+      md.alpha = rand(0.1, 0.35);
+    }
+    // 左端にいくほど濃く
+    const edgeFactor = 1 - Math.min(1, md.x / (CANVAS_W * 0.4));
+    ctx.fillStyle = `rgba(200, 100, 255, ${md.alpha * (0.3 + edgeFactor * 0.7)})`;
+    ctx.fillRect(md.x, md.y, md.w, 1.5);
+  }
+
+  // 左端のドットマトリックス
+  ctx.fillStyle = 'rgba(180, 80, 255, 0.25)';
+  for (let dy = 40; dy < GROUND_Y - 10; dy += 8) {
+    for (let dx = 2; dx < 18; dx += 5) {
+      if (Math.sin(dy * 0.1 + frameCount * 0.02 + dx) > 0) {
+        ctx.fillRect(dx, dy, 1.5, 1.5);
+      }
     }
   }
 
@@ -1630,6 +1817,9 @@ function resetGame() {
   initAuroraWaves();
   initBgAnimals();
   initDataStreams();
+  initCircuit();
+  initHexagons();
+  initMotionDashes();
   cyberGrid = 0; glitchTimer = 0; scanLine = 0;
 }
 
